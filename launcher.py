@@ -1,6 +1,6 @@
 """
-Lucky Tower Launcher – GUI (tkinter), angelehnt an das Hauptmenü von Lucky Tower 2.
-Start:  python launcher.py
+Lucky Tower Launcher – GUI (tkinter), styled after the Lucky Tower 2 main menu.
+Start:  python launcher.py   (moderators: python launcher.py --dev)
 """
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from tkinter import filedialog, messagebox
 from typing import Callable, Optional
 
 import ltl_core as core
+import ltl_i18n
+from ltl_i18n import _
 
 W, H = 900, 600
 
@@ -54,7 +56,6 @@ class Launcher:
         self.root = root
         # Entwicklermodus nur für Moderatoren: python launcher.py --dev  (oder LTL_DEV=1)
         self.dev = "--dev" in sys.argv or os.environ.get("LTL_DEV") == "1"
-        root.title(f"Lucky Tower Launcher {core.APP_VERSION}" + ("  [ENTWICKLERMODUS]" if self.dev else ""))
         root.resizable(False, False)
         self.cv = tk.Canvas(root, width=W, height=H, highlightthickness=0, bg=SKY_BOTTOM)
         self.cv.pack()
@@ -68,6 +69,8 @@ class Launcher:
         self.data = core.data_dir()
         self._install_crash_handlers()
         self.settings = core.Settings.load(self.data)
+        ltl_i18n.set_language(self.settings.language)
+        self._set_title()
         self.ruffle = core.RuffleManager(self.data)
         self.swfs = core.SwfManager(self.data, strict=not self.dev)
         if self.dev:
@@ -91,12 +94,15 @@ class Launcher:
         if not self.dev:
             threading.Thread(target=self._check_remote_manifest, daemon=True).start()
 
+    def _set_title(self) -> None:
+        self.root.title(f"Lucky Tower Launcher {core.APP_VERSION}" + (f"  {_('[DEVELOPER MODE]')}" if self.dev else ""))
+
     def _check_remote_manifest(self) -> None:
         """Übernimmt ein neueres offizielles Manifest aus dem GitHub-Repo (nur vollständig gepinnt)."""
         try:
             remote = core.fetch_remote_official()
         except Exception as e:  # noqa: BLE001
-            self.post(lambda m=str(e): self.trail(f"Offizielles Online-Manifest nicht verfügbar: {m}"))
+            self.post(lambda m=str(e): self.trail(f"Official online manifest not available: {m}"))
             return
         if remote == self.manifest:
             return
@@ -105,9 +111,9 @@ class Launcher:
             if self.busy:
                 self.root.after(500, apply)
                 return
-            self.manifest, self.manifest_src = remote, "offiziell (GitHub)"
-            self.trail("Offizielles Manifest von GitHub übernommen")
-            self.set_status("Offizielle Versionsliste von GitHub aktualisiert.", None)
+            self.manifest, self.manifest_src = remote, "official (GitHub)"
+            self.trail("Official manifest taken over from GitHub")
+            self.set_status(_("Official version list updated from GitHub."), None)
             self._refresh_page()
         self.post(apply)
 
@@ -119,17 +125,17 @@ class Launcher:
             prev = self._session.read_text("utf-8", errors="replace").rstrip().splitlines()
             if self._session.stat().st_size > 300_000:
                 self._session.write_text("\n".join(prev[-2000:]) + "\n", "utf-8")
-            unclean = bool(prev) and not prev[-1].endswith("ENDE")
+            unclean = bool(prev) and not prev[-1].endswith(("END", "ENDE"))
         except OSError:
             unclean = False
         self.trail(f"START Launcher {core.APP_VERSION}, Python {sys.version.split()[0]}, "
                    f"Tk {self.root.tk.call('info', 'patchlevel')}, {sys.platform}")
         if unclean:
-            self.trail("Hinweis: vorherige Sitzung wurde unerwartet beendet (Absturz / Einfrieren / Task-Manager)")
+            self.trail("Note: previous session ended unexpectedly (crash / freeze / task manager)")
         try:
             # Harte Abstürze (Access Violation usw.) und Einfrieren > 10 s: Stack aller Threads protokollieren
             self._fh = open(self.data / "crash_native.log", "a", encoding="utf-8")
-            self._fh.write(f"\n=== Sitzung {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+            self._fh.write(f"\n=== Session {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
             self._fh.flush()
             faulthandler.enable(self._fh)
         except (OSError, RuntimeError, ValueError):
@@ -137,23 +143,23 @@ class Launcher:
 
         def report(exc_type, exc, tb, where: str) -> None:
             text = "".join(traceback.format_exception(exc_type, exc, tb))
-            self.trail(f"FEHLER [{where}] {exc_type.__name__}: {exc}")
+            self.trail(f"ERROR [{where}] {exc_type.__name__}: {exc}")
             try:
                 with open(self.data / "crash.log", "a", encoding="utf-8") as f:
                     f.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} [{where}] "
                             f"Launcher {core.APP_VERSION}, Python {sys.version.split()[0]}\n{text}\n")
             except OSError:
                 pass
-            msg = (f"Unerwarteter Fehler ({where}):\n{exc_type.__name__}: {exc}\n\n"
-                   f"Details stehen in:\n{self.data / 'crash.log'}")
+            msg = _("Unexpected error ({where}):\n{err}\n\nDetails in:\n{log}", where=where,
+                    err=f"{exc_type.__name__}: {exc}", log=self.data / "crash.log")
             if threading.current_thread() is threading.main_thread():
-                messagebox.showerror("Lucky Tower Launcher – Fehler", msg)
+                messagebox.showerror(_("Lucky Tower Launcher – error"), msg)
             else:
-                self.post(lambda: messagebox.showerror("Lucky Tower Launcher – Fehler", msg))
+                self.post(lambda: messagebox.showerror(_("Lucky Tower Launcher – error"), msg))
 
         self.root.report_callback_exception = lambda t, e, tb: report(t, e, tb, "GUI")
-        sys.excepthook = lambda t, e, tb: report(t, e, tb, "Hauptthread")
-        threading.excepthook = lambda a: report(a.exc_type, a.exc_value, a.exc_traceback, "Hintergrund")
+        sys.excepthook = lambda t, e, tb: report(t, e, tb, "main thread")
+        threading.excepthook = lambda a: report(a.exc_type, a.exc_value, a.exc_traceback, "background")
         self._report = report
 
     def trail(self, msg: str) -> None:
@@ -165,7 +171,7 @@ class Launcher:
             pass
 
     def close(self) -> None:
-        self.trail("ENDE")
+        self.trail("END")
         try:
             faulthandler.cancel_dump_traceback_later()
         except Exception:  # noqa: BLE001
@@ -192,9 +198,9 @@ class Launcher:
         # Wolken treiben lassen
         for cid, speed in self.clouds:
             self.cv.move(cid, speed, 0)
-            x1, _, _, _ = self.cv.bbox(cid) or (0, 0, 0, 0)
+            x1 = (self.cv.bbox(cid) or (0, 0, 0, 0))[0]
             if x1 > W + 20:
-                bx1, _, bx2, _ = self.cv.bbox(cid)
+                bx1, _y1, bx2, _y2 = self.cv.bbox(cid)
                 self.cv.move(cid, -(W + (bx2 - bx1) + 60), 0)
 
     def run_bg(self, work: Callable[[], object]) -> None:
@@ -210,12 +216,12 @@ class Launcher:
             except Exception as e:  # noqa: BLE001
                 try:
                     with open(self.data / "crash.log", "a", encoding="utf-8") as f:
-                        f.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} [Aktion]\n{traceback.format_exc()}\n")
+                        f.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} [action]\n{traceback.format_exc()}\n")
                 except OSError:
                     pass
                 msg = str(e) or type(e).__name__
-                followup = lambda: (self.set_status("Fehler – siehe Meldung.", None),  # noqa: E731
-                                    messagebox.showerror("Fehler", msg))
+                followup = lambda: (self.set_status(_("Error – see message."), None),  # noqa: E731
+                                    messagebox.showerror(_("Error"), msg))
             finally:
                 def done():
                     self.busy = False
@@ -267,8 +273,8 @@ class Launcher:
         self._outlined_text(W // 2, 34, "LUCKY TOWER LAUNCHER", self.f_title, CREAM, INK, 3)
         if self.dev:
             self.cv.create_rectangle(0, 62, W, 84, fill="#a8322d", outline="")
-            self.cv.create_text(W // 2, 73, text="ENTWICKLERMODUS – nur für Moderatoren, nicht für Runs zugelassen",
-                                fill="white", font=self.f_info)
+            self.banner_id = self.cv.create_text(W // 2, 73, text=_("DEVELOPER MODE – for moderators only, not valid for runs"),
+                                                 fill="white", font=self.f_info)
 
         # Statusleiste
         cv.create_rectangle(0, H - 30, W, H, fill=BAR, outline="")
@@ -338,8 +344,8 @@ class Launcher:
             self._outlined_text(W // 2, 300, self.subtitle, self.f_info, CREAM, INK, 2, tags=("ui",))
         n = len(self.buttons)
         bw = 290
-        bh, gap = (40, 10) if n <= 4 else (34, 6)
-        y0 = 318
+        bh, gap = (40, 10) if n <= 4 else ((34, 6) if n == 5 else (30, 5))
+        y0 = 318 if n <= 5 else 312
         for i, (label, action, info, enabled) in enumerate(self.buttons):
             y = y0 + i * (bh + gap)
             x1, x2 = W // 2 - bw // 2, W // 2 + bw // 2
@@ -354,11 +360,11 @@ class Launcher:
             if active:
                 cv.tag_bind(tag, "<Enter>", lambda e, b=body, inf=info: self._hover(b, True, inf))
                 cv.tag_bind(tag, "<Leave>", lambda e, b=body: self._hover(b, False, ""))
-                cv.tag_bind(tag, "<Button-1>", lambda e, a=action, lb=label: (self.trail(f"Klick: {lb}"), a()))
+                cv.tag_bind(tag, "<Button-1>", lambda e, a=action, lb=label: (self.trail(f"Click: {lb}"), a()))
             else:
                 for ev in ("<Enter>", "<Leave>", "<Button-1>"):
                     cv.tag_unbind(tag, ev)
-            _ = txt
+            del txt
         self.info_bg = self._round_rect(70, H - 76, W - 70, H - 36, 12, fill="#f3e6c4", outline=BTN_EDGE,
                                         width=2, tags=("ui",), state="hidden")
         self.info_id = cv.create_text(W // 2, H - 56, text="", font=self.f_small, fill=INK,
@@ -392,11 +398,11 @@ class Launcher:
     def _main_page(self) -> None:
         btns = []
         for title, games in self._groups().items():
-            info = f"{len(games)} offizielle Version(en): " + ", ".join(g.get("variant") or "Standard" for g in games)
+            info = _("{n} official version(s): {list}", n=len(games),
+                     list=", ".join(g.get("variant") or _("Standard") for g in games))
             btns.append((title.upper(), lambda t=title: self.go(lambda: self._game_page(t)), info, True))
-        btns.append(("LUCKY TOWER ULTIMATE", lambda: self.go(self._ultimate_page), "Steam-Version", True))
-        btns.append(("EINSTELLUNGEN", lambda: self.go(self._settings_page),
-                     "Ruffle, Hashes, Cache", True))
+        btns.append(("LUCKY TOWER ULTIMATE", lambda: self.go(self._ultimate_page), _("Steam version"), True))
+        btns.append((_("SETTINGS"), lambda: self.go(self._settings_page), _("Ruffle, downloads, language"), True))
         self._set_page("", btns)
 
     def _game_page(self, title: str) -> None:
@@ -405,60 +411,79 @@ class Launcher:
         for g in games:
             st = self.swfs.status(g)
             if st["expected"] and st["source"] == "manifest":
-                ver = f"offiziell freigegeben ✓ (SHA-256 {st['expected'][:12]}…)"
+                ver = _("officially approved ✓ (SHA-256 {h}…)", h=st["expected"][:12])
             elif st["expected"]:
-                ver = f"SHA-256 {st['expected'][:12]}… ({st['source']})"
+                ver = _("SHA-256 {h}… ({src})", h=st["expected"][:12], src=_(st["source"]))
             else:
-                ver = "nicht freigegeben" if not self.dev else "SHA-256 noch nicht festgelegt"
+                ver = _("not approved") if not self.dev else _("SHA-256 not pinned yet")
             if st.get("bundled"):
-                cached = "mitgeliefert"
+                cached = _("bundled")
             elif st["cached"]:
-                cached = "lokal vorhanden"
+                cached = _("available locally")
             else:
-                cached = "wird beim Start geladen"
+                cached = _("downloaded on start")
             quelle = g.get("file") if st.get("bundled") else (g.get("url") or g.get("file"))
-            info = f"{g.get('variant') or title}  ·  {cached}  ·  {ver}\nQuelle: {quelle}"
-            btns.append((g.get("label") or "SPIELEN", lambda g=g: self.launch(g), info, True))
-        btns.append(("ZURÜCK", self.back, "", True))
+            info = f"{g.get('variant') or title}  ·  {cached}  ·  {ver}\n" + _("Source: {src}", src=quelle)
+            btns.append((_(g.get("label") or "PLAY"), lambda g=g: self.launch(g), info, True))
+        btns.append((_("BACK"), self.back, "", True))
         self._set_page(title.upper(), btns)
 
     def _ultimate_page(self) -> None:
         found = core.find_steam_game()
         if found:
-            info = f"Gefunden: {found['path']}" + (f"  ·  Build {found['buildid']}" if found.get("buildid") else "")
-            btns = [("SPIELEN (STEAM)", self.launch_ultimate, info, True)]
+            info = _("Found: {path}", path=found["path"]) + (
+                "  ·  " + _("Build {id}", id=found["buildid"]) if found.get("buildid") else "")
+            btns = [(_("PLAY (STEAM)"), self.launch_ultimate, info, True)]
             sub = "LUCKY TOWER ULTIMATE"
         else:
-            btns = [("IM STEAM-STORE ÖFFNEN", lambda: core.open_steam_store(),
-                     f"Keine Steam-Installation von App {core.LTU_STEAM_APPID} gefunden", True)]
-            sub = "ULTIMATE – NICHT INSTALLIERT"
-        btns.append(("ERNEUT SUCHEN", self._ultimate_page, "Steam-Bibliotheken neu durchsuchen", True))
-        btns.append(("ZURÜCK", self.back, "", True))
+            btns = [(_("OPEN STEAM STORE"), lambda: core.open_steam_store(),
+                     _("No Steam installation of app {id} found", id=core.LTU_STEAM_APPID), True)]
+            sub = _("ULTIMATE – NOT INSTALLED")
+        btns.append((_("SEARCH AGAIN"), self._ultimate_page, _("Search Steam libraries again"), True))
+        btns.append((_("BACK"), self.back, "", True))
         self._set_page(sub, btns)
 
     def _settings_page(self) -> None:
         cur = self.ruffle.installed()
         pinned = self._wanted_ruffle_tag()
-        rinfo = f"Installiert: {cur['tag'] if cur else 'keins'}" + (f"  ·  festgelegt: {pinned}" if pinned else "  ·  neueste Version")
+        rinfo = _("Installed: {tag}", tag=cur["tag"] if cur else _("none")) + "  ·  " + (
+            _("pinned: {tag}", tag=pinned) if pinned else _("latest version"))
+        lang = (_("LANGUAGE: ENGLISH"), self.toggle_language, _("Switch to German / Auf Deutsch umschalten"), True)
         if self.dev:
             btns = [
-                ("RUFFLE AKTUALISIEREN", self.update_ruffle, rinfo, True),
-                ("HASHES EXPORTIEREN", self.export_hashes,
-                 "Lädt alle SWFs, berechnet SHA-256 und speichert games_pinned.json (inkl. Ruffle-Fingerabdruck)", True),
-                ("DOWNLOADS NEU LADEN", self.clear_cache, "Löscht heruntergeladene SWFs und gemerkte Hashes", True),
-                ("DATENORDNER ÖFFNEN", lambda: core.open_folder(self.data), str(self.data), True),
-                ("ZURÜCK", self.back, f"Manifest: {self.manifest_src}", True),
+                (_("UPDATE RUFFLE"), self.update_ruffle, rinfo, True),
+                (_("EXPORT HASHES"), self.export_hashes,
+                 _("Downloads all SWFs, computes SHA-256 and saves games_pinned.json (incl. Ruffle hash)"), True),
+                (_("RELOAD DOWNLOADS"), self.clear_cache, _("Deletes downloaded SWFs and remembered hashes"), True),
+                (_("OPEN DATA FOLDER"), lambda: core.open_folder(self.data), str(self.data), True),
+                lang,
+                (_("BACK"), self.back, f"Manifest: {self.manifest_src}", True),
             ]
         else:
             btns = [
-                ("RUFFLE REPARIEREN", self.reinstall_ruffle,
-                 rinfo + "  ·  installiert die offizielle Version neu", True),
-                ("DOWNLOADS NEU LADEN", self.clear_cache,
-                 "Lädt heruntergeladene Spiele neu – es werden weiterhin nur die offiziellen Versionen akzeptiert", True),
-                ("DATENORDNER ÖFFNEN", lambda: core.open_folder(self.data), str(self.data), True),
-                ("ZURÜCK", self.back, f"Versionsliste: {self.manifest_src}", True),
+                (_("REPAIR RUFFLE"), self.reinstall_ruffle, rinfo + "  ·  " + _("reinstalls the official version"), True),
+                (_("RELOAD DOWNLOADS"), self.clear_cache,
+                 _("Re-downloads games – only the official versions are accepted"), True),
+                (_("OPEN DATA FOLDER"), lambda: core.open_folder(self.data), str(self.data), True),
+                lang,
+                (_("BACK"), self.back, _("Version list: {src}", src=self.manifest_src), True),
             ]
-        self._set_page("EINSTELLUNGEN", btns)
+        self._set_page(_("SETTINGS"), btns)
+
+    def toggle_language(self) -> None:
+        new = "de" if ltl_i18n.get_language() == "en" else "en"
+        ltl_i18n.set_language(new)
+        self.settings.language = new
+        try:
+            self.settings.save(self.data)
+        except OSError:
+            pass
+        self.trail(f"Language: {new}")
+        self._set_title()
+        if self.dev:
+            self.cv.itemconfigure(self.banner_id, text=_("DEVELOPER MODE – for moderators only, not valid for runs"))
+        self.set_status(_("Language: English"), None)
+        self._refresh_page()
 
     # ---------------------------------------------------------------- status
     def set_status(self, text: str, frac: Optional[float]) -> None:
@@ -468,7 +493,7 @@ class Launcher:
     def _refresh_status(self) -> None:
         self.cv.itemconfigure(self.status_id, text=self.status_text)
         cur = self.ruffle.installed()
-        mode = "DEV" if self.dev else "Offiziell"
+        mode = _("DEV") if self.dev else _("Official")
         self.cv.itemconfigure(self.right_id, text=f"{mode}  ·  Ruffle: {cur['tag'] if cur else '—'}  ·  v{core.APP_VERSION}")
         w = int(W * self.progress) if self.progress is not None else 0
         self.cv.coords(self.pbar_id, 0, H - 32, w, H - 30)
@@ -490,11 +515,11 @@ class Launcher:
         st = self.ruffle.ensure(self._wanted_ruffle_tag(), self.bg_progress, pins=self._ruffle_pins(),
                                 mirrors=mirrors, **kw)
         if not self.dev and self.ruffle.verify(st, self._ruffle_pins()) is None:
-            st = dict(st, verification="Ruffle-Binary für diese Plattform nicht gepinnt")
+            st = dict(st, verification="ruffle binary not pinned for this platform")
         return st
 
     def launch(self, game: dict) -> None:
-        name = f"{game['title']} – {game.get('variant') or 'Standard'}"
+        name = f"{game['title']} – {game.get('variant') or _('Standard')}"
 
         def work(redownload: bool = False, local: Optional[Path] = None):
             rs = self._ruffle_ready()
@@ -507,7 +532,7 @@ class Launcher:
                 raise
             except core.HashMismatch as e:
                 if redownload or local or self.swfs.bundled_path(game) or not game.get("url"):
-                    raise RuntimeError(f"{e}\n\nDiese Datei ist keine zugelassene Version und wird nicht gestartet.")
+                    raise RuntimeError(_("{msg}\n\nThis file is not an approved version and will not be started.", msg=e))
                 msg = str(e)
                 return lambda: self._ask_redownload(msg, work)
             except Exception as e:  # noqa: BLE001  (Download fehlgeschlagen)
@@ -515,7 +540,7 @@ class Launcher:
                     raise
                 msg = str(e)
                 return lambda: self._ask_local(game, msg, work)
-            self.bg_progress(f"Starte {name} …", None)
+            self.bg_progress(_("Starting {name} …", name=name), None)
             log_path = self.data / "logs" / f"ruffle_{game['id']}.log"
             proc = core.launch_swf(rs["exe"], swf, list(game.get("ruffle_args") or []), log_path)
             core.write_launch_log(self.data, {
@@ -525,7 +550,7 @@ class Launcher:
                 "mode": "dev" if self.dev else "official",
                 "build": "exe" if getattr(sys, "frozen", False) else "source",
                 "manifest": self.manifest_src})
-            self._watch(proc, name, f"SHA-256 {h[:12]}… ({ver})  ·  Ruffle {rs['tag']}", log_path)
+            self._watch(proc, name, f"SHA-256 {h[:12]}… ({_(ver)})  ·  Ruffle {rs['tag']}", log_path)
             return self._refresh_page
 
         self.run_bg(work)
@@ -533,7 +558,7 @@ class Launcher:
     def _watch(self, proc, name: str, detail: str, log_path: Path) -> None:
         """Statusleiste folgt dem Ruffle-Prozess: läuft → beendet / Fehler."""
         self.running[name] = proc
-        self.bg_progress(f"▶ {name} läuft  ·  {detail}", None)
+        self.bg_progress(_("▶ {name} running  ·  {detail}", name=name, detail=detail), None)
         started = time.time()
 
         def wait():
@@ -543,17 +568,17 @@ class Launcher:
             def done():
                 self.running.pop(name, None)
                 if code != 0 and dur < 15:
-                    self.set_status(f"✖ {name}: Ruffle wurde mit Fehler beendet (Code {code})", None)
-                    out = core.tail(log_path) or "(keine Ausgabe)"
-                    messagebox.showerror("Ruffle-Fehler",
-                                         f"{name} konnte nicht gestartet werden (Exit-Code {code}).\n\n"
-                                         f"Letzte Ruffle-Ausgabe:\n{out}\n\nLog: {log_path}")
+                    self.set_status(_("✖ {name}: Ruffle exited with an error (code {code})", name=name, code=code), None)
+                    out = core.tail(log_path) or _("(no output)")
+                    messagebox.showerror(_("Ruffle error"), _(
+                        "{name} could not be started (exit code {code}).\n\nLast Ruffle output:\n{out}\n\nLog: {log}",
+                        name=name, code=code, out=out, log=log_path))
                 elif self.running:
                     other = next(iter(self.running))
-                    self.set_status(f"▶ {other} läuft  ·  {name} beendet", None)
+                    self.set_status(_("▶ {other} running  ·  {name} closed", other=other, name=name), None)
                 else:
                     m, sec = divmod(int(dur), 60)
-                    self.set_status(f"{name} beendet  ·  Spielzeit {m}:{sec:02d} min", None)
+                    self.set_status(_("{name} closed  ·  play time {m}:{s} min", name=name, m=m, s=f"{sec:02d}"), None)
             self.post(done)
 
         threading.Thread(target=wait, daemon=True).start()
@@ -563,18 +588,17 @@ class Launcher:
             self.page_stack[-1]()
 
     def _ask_redownload(self, msg, work) -> None:
-        if messagebox.askyesno("Version stimmt nicht",
-                               f"{msg}\n\nDie lokale Datei wurde verändert oder ist veraltet.\n"
-                               "Jetzt von der offiziellen Quelle neu herunterladen?"):
+        if messagebox.askyesno(_("Version mismatch"), _(
+                "{msg}\n\nThe local file was modified or is outdated.\nDownload it again from the official source now?",
+                msg=msg)):
             self.run_bg(lambda: work(redownload=True))
 
     def _ask_local(self, game, msg, work) -> None:
-        if messagebox.askyesno("Download fehlgeschlagen",
-                               f"Die offizielle Quelle ist nicht erreichbar:\n{msg}\n\n"
-                               "Stattdessen eine lokal gespeicherte SWF auswählen?\n"
-                               "(Sie wird gegen den offiziellen Hash geprüft, falls einer festgelegt ist.)"):
-            p = filedialog.askopenfilename(title=f"{game['title']} – SWF wählen",
-                                           filetypes=[("Flash", "*.swf"), ("Alle Dateien", "*.*")])
+        if messagebox.askyesno(_("Download failed"), _(
+                "The official source is not reachable:\n{msg}\n\nSelect a locally saved SWF instead?\n"
+                "(It is checked against the official hash.)", msg=msg)):
+            p = filedialog.askopenfilename(title=_("{title} – choose SWF", title=game["title"]),
+                                           filetypes=[("Flash", "*.swf"), (_("All files"), "*.*")])
             if p:
                 self.run_bg(lambda: work(local=Path(p)))
 
@@ -582,31 +606,30 @@ class Launcher:
         try:
             core.launch_steam_game()
             core.write_launch_log(self.data, {"game": "ltu", "steam_appid": core.LTU_STEAM_APPID})
-            self.set_status("Lucky Tower Ultimate wird über Steam gestartet …", None)
+            self.set_status(_("Starting Lucky Tower Ultimate via Steam …"), None)
         except OSError as e:
-            messagebox.showerror("Fehler", f"Steam konnte nicht geöffnet werden:\n{e}")
+            messagebox.showerror(_("Error"), _("Steam could not be opened:\n{e}", e=e))
 
     def reinstall_ruffle(self) -> None:
         def work():
             st = self._ruffle_ready(reinstall=True)
-            self.bg_progress(f"Ruffle {st['tag']} neu installiert und geprüft.", None)
+            self.bg_progress(_("Ruffle {tag} reinstalled and verified.", tag=st["tag"]), None)
             return self._refresh_page
         self.run_bg(work)
 
     def update_ruffle(self) -> None:
         def work():
             st = self.ruffle.ensure(self._wanted_ruffle_tag(), self.bg_progress, force_check=True, pins=self._ruffle_pins())
-            self.bg_progress(f"Ruffle {st['tag']} bereit.", None)
+            self.bg_progress(_("Ruffle {tag} ready.", tag=st["tag"]), None)
             return self._refresh_page
         self.run_bg(work)
 
     def clear_cache(self) -> None:
-        q = ("Alle heruntergeladenen SWFs und gemerkten Hashes löschen?" if self.dev else
-             "Heruntergeladene Spiele löschen und beim nächsten Start neu laden?\n"
-             "(Die offiziellen Versionen bleiben festgelegt.)")
-        if messagebox.askyesno("Downloads neu laden", q):
+        q = (_("Delete all downloaded SWFs and remembered hashes?") if self.dev else
+             _("Delete downloaded games and download them again on next start?\n(The official versions stay pinned.)"))
+        if messagebox.askyesno(_("Reload downloads"), q):
             self.swfs.clear()
-            self.set_status("Cache geleert – Spiele werden beim nächsten Start neu geladen.", None)
+            self.set_status(_("Cache cleared – games will be downloaded again on next start."), None)
 
     def export_hashes(self) -> None:
         def work():
@@ -631,11 +654,9 @@ class Launcher:
             def finish():
                 self.root.clipboard_clear()
                 self.root.clipboard_append(text)
-                self.set_status(f"Hashes exportiert nach {dest} (auch in der Zwischenablage).", 1.0)
-                messagebox.showinfo("Hashes exportiert",
-                                    "\n".join(lines) + f"\n\nGespeichert: {dest}\n"
-                                    "Als games.json neben den Launcher legen (oder ins Repo), "
-                                    "um diese Versionen festzuschreiben.")
+                self.set_status(_("Hashes exported to {dest} (also copied to clipboard).", dest=dest), 1.0)
+                messagebox.showinfo(_("Hashes exported"), "\n".join(lines) + "\n\n" + _(
+                    "Saved: {dest}\nCopy the values into games.json in the repository to pin these versions.", dest=dest))
             return finish
         self.run_bg(work)
 

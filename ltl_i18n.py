@@ -1,0 +1,171 @@
+"""
+Lucky Tower Launcher – Übersetzungen / translations.
+
+English is the source language. German translations are looked up by the English text.
+Usage:  _("Starting {name} …", name=x)
+"""
+from __future__ import annotations
+
+LANGUAGES = ("en", "de")
+_lang = "en"
+
+
+def set_language(lang: str) -> None:
+    global _lang
+    _lang = lang if lang in LANGUAGES else "en"
+
+
+def get_language() -> str:
+    return _lang
+
+
+def _(text: str, **kw) -> str:
+    if _lang == "de":
+        text = DE.get(text, text)
+    return text.format(**kw) if kw else text
+
+
+DE: dict[str, str] = {
+    # ---- window / scene
+    "[DEVELOPER MODE]": "[ENTWICKLERMODUS]",
+    "DEVELOPER MODE – for moderators only, not valid for runs":
+        "ENTWICKLERMODUS – nur für Moderatoren, nicht für Runs zugelassen",
+    "DEV": "DEV",
+    "Official": "Offiziell",
+
+    # ---- main menu
+    "{n} official version(s): {list}": "{n} offizielle Version(en): {list}",
+    "Standard": "Standard",
+    "Steam version": "Steam-Version",
+    "SETTINGS": "EINSTELLUNGEN",
+    "Ruffle, downloads, language": "Ruffle, Downloads, Sprache",
+
+    # ---- game page
+    "PLAY": "SPIELEN",
+    "BACK": "ZURÜCK",
+    "officially approved ✓ (SHA-256 {h}…)": "offiziell freigegeben ✓ (SHA-256 {h}…)",
+    "SHA-256 {h}… ({src})": "SHA-256 {h}… ({src})",
+    "not approved": "nicht freigegeben",
+    "SHA-256 not pinned yet": "SHA-256 noch nicht festgelegt",
+    "bundled": "mitgeliefert",
+    "available locally": "lokal vorhanden",
+    "downloaded on start": "wird beim Start geladen",
+    "Source: {src}": "Quelle: {src}",
+    "first download": "erster Download",
+
+    # ---- ultimate page
+    "Found: {path}": "Gefunden: {path}",
+    "Build {id}": "Build {id}",
+    "PLAY (STEAM)": "SPIELEN (STEAM)",
+    "OPEN STEAM STORE": "IM STEAM-STORE ÖFFNEN",
+    "No Steam installation of app {id} found": "Keine Steam-Installation von App {id} gefunden",
+    "ULTIMATE – NOT INSTALLED": "ULTIMATE – NICHT INSTALLIERT",
+    "SEARCH AGAIN": "ERNEUT SUCHEN",
+    "Search Steam libraries again": "Steam-Bibliotheken neu durchsuchen",
+
+    # ---- settings page
+    "Installed: {tag}": "Installiert: {tag}",
+    "none": "keins",
+    "pinned: {tag}": "festgelegt: {tag}",
+    "latest version": "neueste Version",
+    "UPDATE RUFFLE": "RUFFLE AKTUALISIEREN",
+    "EXPORT HASHES": "HASHES EXPORTIEREN",
+    "Downloads all SWFs, computes SHA-256 and saves games_pinned.json (incl. Ruffle hash)":
+        "Lädt alle SWFs, berechnet SHA-256 und speichert games_pinned.json (inkl. Ruffle-Fingerabdruck)",
+    "RELOAD DOWNLOADS": "DOWNLOADS NEU LADEN",
+    "Deletes downloaded SWFs and remembered hashes": "Löscht heruntergeladene SWFs und gemerkte Hashes",
+    "OPEN DATA FOLDER": "DATENORDNER ÖFFNEN",
+    "REPAIR RUFFLE": "RUFFLE REPARIEREN",
+    "reinstalls the official version": "installiert die offizielle Version neu",
+    "Re-downloads games – only the official versions are accepted":
+        "Lädt heruntergeladene Spiele neu – es werden weiterhin nur die offiziellen Versionen akzeptiert",
+    "Version list: {src}": "Versionsliste: {src}",
+    "LANGUAGE: ENGLISH": "SPRACHE: DEUTSCH",
+    "Switch to German / Auf Deutsch umschalten": "Auf Englisch umschalten / Switch to English",
+
+    # ---- status / launching
+    "Error – see message.": "Fehler – siehe Meldung.",
+    "Error": "Fehler",
+    "Starting {name} …": "Starte {name} …",
+    "▶ {name} running  ·  {detail}": "▶ {name} läuft  ·  {detail}",
+    "✖ {name}: Ruffle exited with an error (code {code})": "✖ {name}: Ruffle wurde mit Fehler beendet (Code {code})",
+    "(no output)": "(keine Ausgabe)",
+    "Ruffle error": "Ruffle-Fehler",
+    "{name} could not be started (exit code {code}).\n\nLast Ruffle output:\n{out}\n\nLog: {log}":
+        "{name} konnte nicht gestartet werden (Exit-Code {code}).\n\nLetzte Ruffle-Ausgabe:\n{out}\n\nLog: {log}",
+    "▶ {other} running  ·  {name} closed": "▶ {other} läuft  ·  {name} beendet",
+    "{name} closed  ·  play time {m}:{s} min": "{name} beendet  ·  Spielzeit {m}:{s} min",
+    "{msg}\n\nThis file is not an approved version and will not be started.":
+        "{msg}\n\nDiese Datei ist keine zugelassene Version und wird nicht gestartet.",
+    "Version mismatch": "Version stimmt nicht",
+    "{msg}\n\nThe local file was modified or is outdated.\nDownload it again from the official source now?":
+        "{msg}\n\nDie lokale Datei wurde verändert oder ist veraltet.\nJetzt von der offiziellen Quelle neu herunterladen?",
+    "Download failed": "Download fehlgeschlagen",
+    "The official source is not reachable:\n{msg}\n\nSelect a locally saved SWF instead?\n"
+    "(It is checked against the official hash.)":
+        "Die offizielle Quelle ist nicht erreichbar:\n{msg}\n\nStattdessen eine lokal gespeicherte SWF auswählen?\n"
+        "(Sie wird gegen den offiziellen Hash geprüft.)",
+    "{title} – choose SWF": "{title} – SWF wählen",
+    "All files": "Alle Dateien",
+    "Starting Lucky Tower Ultimate via Steam …": "Lucky Tower Ultimate wird über Steam gestartet …",
+    "Steam could not be opened:\n{e}": "Steam konnte nicht geöffnet werden:\n{e}",
+    "Ruffle {tag} reinstalled and verified.": "Ruffle {tag} neu installiert und geprüft.",
+    "Ruffle {tag} ready.": "Ruffle {tag} bereit.",
+    "Delete all downloaded SWFs and remembered hashes?": "Alle heruntergeladenen SWFs und gemerkten Hashes löschen?",
+    "Delete downloaded games and download them again on next start?\n(The official versions stay pinned.)":
+        "Heruntergeladene Spiele löschen und beim nächsten Start neu laden?\n(Die offiziellen Versionen bleiben festgelegt.)",
+    "Reload downloads": "Downloads neu laden",
+    "Cache cleared – games will be downloaded again on next start.":
+        "Cache geleert – Spiele werden beim nächsten Start neu geladen.",
+    "Hashes exported to {dest} (also copied to clipboard).": "Hashes exportiert nach {dest} (auch in der Zwischenablage).",
+    "Hashes exported": "Hashes exportiert",
+    "Saved: {dest}\nCopy the values into games.json in the repository to pin these versions.":
+        "Gespeichert: {dest}\nWerte in die games.json im Repo übernehmen, um diese Versionen festzuschreiben.",
+    "Official version list updated from GitHub.": "Offizielle Versionsliste von GitHub aktualisiert.",
+    "Unexpected error ({where}):\n{err}\n\nDetails in:\n{log}": "Unerwarteter Fehler ({where}):\n{err}\n\nDetails stehen in:\n{log}",
+    "Lucky Tower Launcher – error": "Lucky Tower Launcher – Fehler",
+    "Language: English": "Sprache: Deutsch",
+
+    # ---- core: progress
+    "Ruffle was modified – reinstalling …": "Ruffle wurde verändert – wird neu installiert …",
+    "Looking for Ruffle release on GitHub …": "Suche Ruffle-Release auf GitHub …",
+    "Ruffle release not reachable – using mirror …": "Ruffle-Release nicht erreichbar – nutze Spiegel …",
+    "Ruffle {tag} is up to date.": "Ruffle {tag} ist aktuell.",
+    "Extracting Ruffle …": "Entpacke Ruffle …",
+    "Ruffle {tag} installed.": "Ruffle {tag} installiert.",
+
+    # ---- core: errors
+    "Ruffle {tag} has no desktop build for {os}/{arch}": "Ruffle {tag} hat keinen Desktop-Build für {os}/{arch}",
+    "No Ruffle desktop build found for {os}/{arch}": "Kein Ruffle-Desktop-Build für {os}/{arch} gefunden",
+    "Ruffle download does not match GitHub's checksum.": "Ruffle-Download stimmt nicht mit der Prüfsumme von GitHub überein.",
+    "Ruffle binary not found after extracting": "Ruffle-Binary nach dem Entpacken nicht gefunden",
+    "Ruffle {tag} ({platform}) does not match the official fingerprint.":
+        "Ruffle {tag} ({platform}) entspricht nicht dem offiziellen Fingerabdruck.",
+    "Bundled file is missing: {file}\nPlease download the launcher again.":
+        "Mitgelieferte Datei fehlt: {file}\nBitte den Launcher neu herunterladen.",
+    "The downloaded file is not a SWF (source blocked or changed?)":
+        "Die heruntergeladene Datei ist keine SWF (Quelle blockiert oder geändert?)",
+    "{what} is not a valid SWF ({size} bytes) – probably an incomplete download. Please replace it.":
+        "{what} ist keine gültige SWF ({size} Bytes) – vermutlich unvollständig heruntergeladen. Bitte ersetzen.",
+    "Bundled file {file}": "Mitgelieferte Datei {file}",
+    "Saved file {file}": "Gespeicherte Datei {file}",
+    "File {file}": "Datei {file}",
+    "Only available in developer mode.": "Nur im Entwicklermodus verfügbar.",
+    "The selected file is not a SWF.": "Die gewählte Datei ist keine SWF.",
+    "{game}: no officially approved version on record.": "{game}: keine offiziell freigegebene Version hinterlegt.",
+    "{game}: no officially approved version on record – launch not allowed.":
+        "{game}: keine offiziell freigegebene Version hinterlegt – Start nicht erlaubt.",
+    "File does not match the official version ({src}).\nExpected: {exp}\nFound: {got}":
+        "Datei passt nicht zur offiziellen Version ({src}).\nErwartet: {exp}\nGefunden: {got}",
+    "SHA-256 does not match the official version!\nExpected ({src}): {exp}\nFound: {got}":
+        "SHA-256 stimmt nicht mit der offiziellen Version überein!\nErwartet ({src}): {exp}\nGefunden: {got}",
+    "Unsafe path in archive: {name}": "Unsicherer Pfad im Archiv: {name}",
+    "Unsafe entry in archive: {name}": "Unsicherer Eintrag im Archiv: {name}",
+    "Unknown archive format: {name}": "Unbekanntes Archivformat: {name}",
+
+    # ---- verification codes (shown in status bar)
+    "verified": "verifiziert",
+    "same as first download": "wie erster Download",
+    "bundled, not pinned": "mitgeliefert, nicht gepinnt",
+    "not pinned (hash remembered)": "nicht gepinnt (Hash gemerkt)",
+}

@@ -62,22 +62,22 @@ print("ruffle install ok:", st["exe"].replace(tmp,"~"))
 # --- 4. SWF: TOFU, Manipulation, gepinnter Hash, Nicht-SWF
 sm=core.SwfManager(root, strict=False)
 g={"id":"lt1","title":"Lucky Tower","url":base+"/lt1.swf","sha256":None}
-p,h,v=sm.ensure(g,lambda t,f:None); assert v.startswith("nicht gepinnt"), v
-p,h2,v=sm.ensure(g,lambda t,f:None); assert v=="wie erster Download" and h2==h
+p,h,v=sm.ensure(g,lambda t,f:None); assert v.startswith("not pinned"), v
+p,h2,v=sm.ensure(g,lambda t,f:None); assert v=="same as first download" and h2==h
 p.write_bytes(p.read_bytes()+b"x")
 try: sm.ensure(g,lambda t,f:None); raise SystemExit("mismatch not detected")
 except core.HashMismatch: pass
-p,_,v=sm.ensure(g,lambda t,f:None,redownload=True); assert v=="wie erster Download"
-g2=dict(g,sha256=h); assert sm.ensure(g2,lambda t,f:None)[2]=="verifiziert"
+p,_,v=sm.ensure(g,lambda t,f:None,redownload=True); assert v=="same as first download"
+g2=dict(g,sha256=h); assert sm.ensure(g2,lambda t,f:None)[2]=="verified"
 g3=dict(g,sha256="0"*64)
 try: sm.ensure(g3,lambda t,f:None); raise SystemExit("pinned mismatch not detected")
 except core.HashMismatch: pass
 try: sm.ensure({"id":"bad","title":"x","url":base+"/fake.swf","sha256":None},lambda t,f:None); raise SystemExit("non-swf accepted")
-except RuntimeError as e: assert "keine SWF" in str(e)
+except RuntimeError as e: assert "not a SWF" in str(e)
 # lokaler Import gegen Pin
 try: sm.import_local(g3, srv/"lt1.swf"); raise SystemExit("bad local accepted")
 except core.HashMismatch: pass
-assert sm.import_local(g2, srv/"lt1.swf")[2]=="verifiziert"
+assert sm.import_local(g2, srv/"lt1.swf")[2]=="verified"
 print("swf verify ok")
 
 # --- 5. Manifest-Validierung
@@ -119,17 +119,17 @@ def pump(sec=3):
 games=app.manifest["games"]
 app.launch(games[1]); pump()
 assert launched and launched[-1][1].endswith("lt2_qms.swf"), launched
-assert "läuft" in app.status_text, app.status_text
-time.sleep(0.2); pump(1); assert "beendet" in app.status_text and "Spielzeit" in app.status_text, app.status_text
+assert "running" in app.status_text, app.status_text
+time.sleep(0.2); pump(1); assert "closed" in app.status_text and "play time" in app.status_text, app.status_text
 log=(root/"launch_log.jsonl").read_text().strip().splitlines(); assert json.loads(log[-1])["ruffle"]=="nightly-2026-11-10"
 # Manipuliert -> Nachfrage -> Neu laden -> Start
 p=root/"games"/"lt2_qms.swf"; p.write_bytes(p.read_bytes()+b"!")
 messagebox.answer=True; n=len(launched); app.launch(games[1]); pump(); pump()
-assert any(m[0]=="ask" and "Version stimmt nicht" in m[1] for m in messagebox.log) and len(launched)==n+1
+assert any(m[0]=="ask" and "Version mismatch" in m[1] for m in messagebox.log) and len(launched)==n+1
 # Quelle offline -> lokale Datei
 from tkinter import filedialog; filedialog.path=str(srv/"lt1.swf")
 n=len(launched); app.launch(games[2]); pump(); pump()
-assert any("Download fehlgeschlagen" in m[1] for m in messagebox.log) and len(launched)==n+1, messagebox.log
+assert any("Download failed" in m[1] for m in messagebox.log) and len(launched)==n+1, messagebox.log
 # Hash-Export
 app.export_hashes(); pump()
 pinned=json.loads((root/"games_pinned.json").read_text())
@@ -144,13 +144,13 @@ appd=pathlib.Path(tmp,"app"); (appd/"swf").mkdir(parents=True)
 core.app_dir=lambda: appd; core.resource_dir=lambda: appd
 gb={"id":"lt2_qms","title":"Lucky Tower 2","file":"swf/lt2_qms.swf","url":None,"sha256":None}
 core.validate_manifest({"games":[gb]})
-p,h,v=sm.ensure(gb,lambda t,f:None); assert p==appd/"swf"/"lt2_qms.swf" and v=="mitgeliefert, nicht gepinnt", v
-assert sm.ensure(dict(gb,sha256=h),lambda t,f:None)[2]=="verifiziert"
+p,h,v=sm.ensure(gb,lambda t,f:None); assert p==appd/"swf"/"lt2_qms.swf" and v=="bundled, not pinned", v
+assert sm.ensure(dict(gb,sha256=h),lambda t,f:None)[2]=="verified"
 assert sm.status(dict(gb,sha256=h))["bundled"]
 try: sm.ensure(dict(gb,sha256="1"*64),lambda t,f:None); raise SystemExit("bundled mismatch not detected")
 except core.HashMismatch: pass
 try: sm.ensure(dict(gb,id="neu_ohne_datei",file="swf/fehlt.swf"),lambda t,f:None); raise SystemExit("missing accepted")
-except RuntimeError as e: assert "fehlt" in str(e)
+except RuntimeError as e: assert "missing" in str(e)
 # Datei fehlt, aber URL vorhanden -> Download
 assert sm.ensure({"id":"lt1","title":"x","file":"swf/lt1.swf","url":base+"/lt1.swf","sha256":None},lambda t,f:None)[0]==sm.path_for({"id":"lt1"})
 for bad in ({"games":[{"id":"a","title":"x"}]}, {"games":[{"id":"a","title":"x","file":"../evil.swf"}]}):
@@ -161,7 +161,7 @@ asks=len([m for m in messagebox.log if m[0]=="ask"])
 app.manifest["games"][1].update(file="swf/lt2_qms.swf", sha256="2"*64)
 n=len(launched); app.launch(app.manifest["games"][1]); pump()
 assert len(launched)==n and len([m for m in messagebox.log if m[0]=="ask"])==asks
-assert messagebox.log[-1][0]=="error" and "keine zugelassene Version" in messagebox.log[-1][2]
+assert messagebox.log[-1][0]=="error" and "not an approved version" in messagebox.log[-1][2]
 app.manifest["games"][1]["sha256"]=h; app.launch(app.manifest["games"][1]); pump()
 assert launched[-1][1].endswith("swf/lt2_qms.swf")
 assert "crash.log" in os.listdir(root)
@@ -173,14 +173,14 @@ messagebox.log.clear()
 (appd/"swf"/"lt2_glitchless.swf").write_bytes(b"")
 gl=dict(app.manifest["games"][2], file="swf/lt2_glitchless.swf", sha256=None)
 n=len(launched); app.launch(gl); pump()
-assert len(launched)==n and "keine gültige SWF (0 Bytes)" in messagebox.log[-1][2], messagebox.log[-1]
+assert len(launched)==n and "not a valid SWF (0 bytes)" in messagebox.log[-1][2], messagebox.log[-1]
 # Ersetzte Datei startet danach (kein veralteter Hash gemerkt)
 (appd/"swf"/"lt2_glitchless.swf").write_bytes(b"CWS\x0a"+os.urandom(300)); app.launch(gl); pump()
 assert len(launched)==n+1; time.sleep(0.2); pump(1)
 # Ruffle stürzt sofort ab -> Fehlerdialog mit Log
 next_proc[0]=FakeProc(code=1); app.launch(gl); pump(); time.sleep(0.2); pump(1)
-assert messagebox.log[-1][1]=="Ruffle-Fehler" and "Invalid SWF" in messagebox.log[-1][2], messagebox.log[-1]
-assert "Fehler" in app.status_text
+assert messagebox.log[-1][1]=="Ruffle error" and "Invalid SWF" in messagebox.log[-1][2], messagebox.log[-1]
+assert "error" in app.status_text
 next_proc[0]=FakeProc()
 print("bundled ok")
 
@@ -218,7 +218,7 @@ def hj(url,timeout=20):
 core.http_json=hj
 messagebox.log.clear()
 r2=tk.Tk(); app2=launcher.Launcher(r2); sys.excepthook=sys.__excepthook__
-assert not app2.dev and app2.manifest_src=="offiziell (eingebaut)", app2.manifest_src
+assert not app2.dev and app2.manifest_src=="official (built-in)", app2.manifest_src
 assert app2.manifest["games"][0]["sha256"]==H(good) and app2._wanted_ruffle_tag()=="nightly-2026-11-10"
 def pump2(sec=3):
     end=time.time()+sec
@@ -246,17 +246,43 @@ filedialog.path=str(srv/"modded.swf"); n=len(launched); app2.launch(app2.manifes
 assert len(launched)==n and messagebox.log[-1][0]=="error", messagebox.log[-1]
 # Ungepinnter Eintrag -> NotApproved
 gun=dict(app2.manifest["games"][1], sha256=None); n=len(launched); app2.launch(gun); pump2()
-assert len(launched)==n and "nicht" in messagebox.log[-1][2] and "freigegeben" in messagebox.log[-1][2], messagebox.log[-1]
+assert len(launched)==n and "no officially approved version" in messagebox.log[-1][2], messagebox.log[-1]
 try: core.check_official(dict(official, games=[gun])); raise SystemExit("unpinned official accepted")
 except ValueError: pass
 # Einstellungen: keine Hash-Export-Funktion im offiziellen Modus
 app2.go(app2._settings_page)
-labels=[b[0] for b in app2.buttons]; assert "HASHES EXPORTIEREN" not in labels and "RUFFLE AKTUALISIEREN" not in labels, labels
+labels=[b[0] for b in app2.buttons]; assert "EXPORT HASHES" not in labels and "UPDATE RUFFLE" not in labels and "LANGUAGE: ENGLISH" in labels, labels
 try: app2.swfs.fetch_raw(app2.manifest["games"][0], lambda t,f:None); raise SystemExit("fetch_raw in strict")
 except core.NotApproved: pass
 # Launch-Log kennzeichnet Modus
 last=json.loads((root/"launch_log.jsonl").read_text().strip().splitlines()[-1]); assert last["mode"]=="official" and last["build"]=="source"
 print("official mode ok")
+
+# --- 9b. Sprache: Standard Englisch, Umschalten auf Deutsch wird gespeichert
+import ltl_i18n
+assert ltl_i18n.get_language()=="en" and json.loads((root/"settings.json").read_text()).get("language","en")=="en"
+app2.go(app2._settings_page)
+idx=[b[0] for b in app2.buttons].index("LANGUAGE: ENGLISH"); app2.cv.click(f"btn{idx}")
+assert ltl_i18n.get_language()=="de" and json.loads((root/"settings.json").read_text())["language"]=="de"
+labels=[b[0] for b in app2.buttons]; assert "SPRACHE: DEUTSCH" in labels and "ZURÜCK" in labels and app2.subtitle=="EINSTELLUNGEN", labels
+app2.show_main(); assert "EINSTELLUNGEN" in [b[0] for b in app2.buttons]
+app2.go(lambda: app2._game_page("Lucky Tower")); assert app2.buttons[-1][0]=="ZURÜCK" and "Quelle:" in app2.buttons[0][2], app2.buttons
+assert ltl_i18n._(app2.manifest["games"][0].get("label") or "PLAY") in ("SPIELEN","OFFICIAL") and ltl_i18n._("PLAY")=="SPIELEN"
+# deutsche Fehlermeldungen aus dem Kern
+gun2=dict(app2.manifest["games"][1], sha256=None); app2.launch(gun2); pump2()
+assert "keine offiziell freigegebene Version" in messagebox.log[-1][2], messagebox.log[-1]
+# Neustart übernimmt gespeicherte Sprache
+r3=tk.Tk(); app3=launcher.Launcher(r3); sys.excepthook=sys.__excepthook__
+assert ltl_i18n.get_language()=="de" and "EINSTELLUNGEN" in [b[0] for b in app3.buttons]
+# zurück auf Englisch
+app3.go(app3._settings_page); idx=[b[0] for b in app3.buttons].index("SPRACHE: DEUTSCH"); app3.cv.click(f"btn{idx}")
+assert ltl_i18n.get_language()=="en" and "LANGUAGE: ENGLISH" in [b[0] for b in app3.buttons]
+# alle deutschen Übersetzungen haben dieselben Platzhalter wie das Englische
+import string
+for en,de in ltl_i18n.DE.items():
+    f=lambda t: sorted({x[1] for x in string.Formatter().parse(t) if x[1]})
+    assert f(en)==f(de), (en,de)
+print("language ok")
 
 # --- 10. Ruffle-Fingerabdruck + GitHub-Prüfsumme
 pid=core.platform_id()
@@ -269,7 +295,7 @@ try: rm.ensure("nightly-2026-11-10", lambda t,f:None, pins={pid:"0"*64}); raise 
 except core.NotApproved: pass
 releases[1]["assets"][0]["digest"]="sha256:"+"f"*64
 try: rm.ensure("nightly-2026-11-10", lambda t,f:None, reinstall=True); raise SystemExit("digest mismatch accepted")
-except core.NotApproved as e: assert "Prüfsumme" in str(e)
+except core.NotApproved as e: assert "checksum" in str(e)
 releases[1]["assets"][0]["digest"]="sha256:"+core.sha256_file(srv/"ruffle-nightly-2026_11_10-linux-x86_64.tar.gz")
 assert rm.ensure("nightly-2026-11-10", lambda t,f:None, reinstall=True, pins={pid:real})["tag"]=="nightly-2026-11-10"
 # Ruffle-Release verschwunden -> Spiegel (nur mit Pin), Binary wird geprüft

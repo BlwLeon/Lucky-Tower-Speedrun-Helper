@@ -31,8 +31,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+from ltl_i18n import _
+
 APP_NAME = "LuckyTowerLauncher"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://www.speedrun.com/series/Lucky_Tower_Series)"
 
 RUFFLE_REPO = "ruffle-rs/ruffle"
@@ -66,7 +68,7 @@ DEFAULT_MANIFEST: dict = {
             "id": "lt1",
             "title": "Lucky Tower",
             "variant": "Official",
-            "label": "SPIELEN",
+            "label": "PLAY",
             "file": "swf/lt1.swf",
             "url": "http://uploads.ungrounded.net/551000/551891_lucky_towa_NGFINALcs3.swf",
             "sha256": "a74be05574ffe4755ad188a1ea79ca82e622af39d0a461ec978fe8ae86cb0821",
@@ -129,8 +131,9 @@ def app_dir() -> Path:
 
 @dataclass
 class Settings:
-    manifest_url: Optional[str] = None  # z. B. raw-URL einer games.json im GitHub-Repo
-    ruffle_tag_override: Optional[str] = None
+    manifest_url: Optional[str] = None  # nur Entwicklermodus
+    ruffle_tag_override: Optional[str] = None  # nur Entwicklermodus
+    language: str = "en"
     extra: dict = field(default_factory=dict)
 
     @classmethod
@@ -142,6 +145,7 @@ class Settings:
                 return cls(
                     manifest_url=raw.get("manifest_url"),
                     ruffle_tag_override=raw.get("ruffle_tag_override"),
+                    language=raw.get("language") if raw.get("language") in ("en", "de") else "en",
                     extra=raw.get("extra", {}),
                 )
             except (OSError, ValueError):
@@ -156,6 +160,7 @@ class Settings:
                 {
                     "manifest_url": self.manifest_url,
                     "ruffle_tag_override": self.ruffle_tag_override,
+                    "language": self.language,
                     "extra": self.extra,
                 },
                 indent=2,
@@ -220,21 +225,21 @@ def is_swf(path: Path) -> bool:
 # --------------------------------------------------------------------------
 def validate_manifest(m: object) -> dict:
     if not isinstance(m, dict) or not isinstance(m.get("games"), list):
-        raise ValueError("Manifest ohne 'games'-Liste")
+        raise ValueError("Manifest has no 'games' list")
     for g in m["games"]:
         for key in ("id", "title"):
             if not isinstance(g.get(key), str) or not g[key]:
-                raise ValueError(f"Manifest-Eintrag ohne '{key}': {g!r}")
+                raise ValueError(f"Manifest entry without '{key}': {g!r}")
         if not g.get("url") and not g.get("file"):
-            raise ValueError(f"Manifest-Eintrag {g['id']} braucht 'file' oder 'url'")
+            raise ValueError(f"Manifest entry {g['id']} needs 'file' or 'url'")
         if g.get("file") and (Path(g["file"]).is_absolute() or ".." in Path(g["file"]).parts):
-            raise ValueError(f"'file' muss ein relativer Pfad im Launcher-Ordner sein: {g['file']!r}")
+            raise ValueError(f"'file' must be a relative path inside the launcher folder: {g['file']!r}")
         g.setdefault("url", None)
         if not re.fullmatch(r"[a-z0-9_]+", g["id"]):
-            raise ValueError(f"Ungültige Spiel-ID: {g['id']!r}")
+            raise ValueError(f"Invalid game id: {g['id']!r}")
         sha = g.get("sha256")
         if sha is not None and not re.fullmatch(r"[0-9a-fA-F]{64}", str(sha)):
-            raise ValueError(f"Ungültiger SHA-256 bei {g['id']}")
+            raise ValueError(f"Invalid SHA-256 for {g['id']}")
         g.setdefault("variant", "")
         g.setdefault("label", g["variant"].upper() or "SPIELEN")
         g.setdefault("ruffle_args", [])
@@ -248,16 +253,16 @@ class NotApproved(RuntimeError):
 def check_official(m: dict) -> dict:
     """Im offiziellen Modus muss jede Version per SHA-256 festgelegt sein."""
     if not m.get("ruffle_tag"):
-        raise ValueError("Offizielles Manifest ohne festgelegte Ruffle-Version (ruffle_tag)")
+        raise ValueError("Official manifest without pinned Ruffle version (ruffle_tag)")
     for g in m["games"]:
         if not g.get("sha256"):
-            raise ValueError(f"Offizielles Manifest: {g['id']} hat keinen festgelegten SHA-256")
+            raise ValueError(f"Official manifest: {g['id']} has no pinned SHA-256")
     pins = m.get("ruffle_sha256") or {}
     if not isinstance(pins, dict) or any(not re.fullmatch(r"[0-9a-fA-F]{64}", str(v)) for v in pins.values()):
-        raise ValueError("Ungültiges 'ruffle_sha256'")
+        raise ValueError("Invalid 'ruffle_sha256'")
     mirrors = m.get("ruffle_mirror") or {}
     if not isinstance(mirrors, dict) or any(not str(v).startswith("https://") for v in mirrors.values()):
-        raise ValueError("Ungültiges 'ruffle_mirror' (nur https-URLs)")
+        raise ValueError("Invalid 'ruffle_mirror' (https URLs only)")
     return m
 
 
@@ -267,10 +272,10 @@ def load_official_manifest(log: Callable[[str], None] = print) -> tuple[dict, st
     p = resource_dir() / "games.json"
     if p.exists():
         try:
-            return check_official(validate_manifest(json.loads(p.read_text("utf-8")))), "offiziell (eingebaut)"
+            return check_official(validate_manifest(json.loads(p.read_text("utf-8")))), "official (built-in)"
         except Exception as e:  # noqa: BLE001
-            log(f"Eingebautes Manifest ungültig, nutze Default: {e}")
-    return check_official(validate_manifest(json.loads(json.dumps(DEFAULT_MANIFEST)))), "offiziell (Default)"
+            log(f"Built-in manifest invalid, using default: {e}")
+    return check_official(validate_manifest(json.loads(json.dumps(DEFAULT_MANIFEST)))), "official (default)"
 
 
 def fetch_remote_official(timeout: float = 6) -> dict:
@@ -288,12 +293,12 @@ def load_manifest(root: Path, settings: Settings, log: Callable[[str], None] = p
             cache.write_text(json.dumps(m, indent=2), "utf-8")
             return m, f"remote ({settings.manifest_url})"
         except Exception as e:  # noqa: BLE001
-            log(f"Remote-Manifest nicht ladbar: {e}")
+            log(f"Remote manifest could not be loaded: {e}")
             if cache.exists():
                 try:
                     return validate_manifest(json.loads(cache.read_text("utf-8"))), "remote (Cache)"
                 except Exception as e2:  # noqa: BLE001
-                    log(f"Manifest-Cache defekt: {e2}")
+                    log(f"Manifest cache broken: {e2}")
     cands = []
     for c in (app_dir() / "games.json", resource_dir() / "games.json", root / "games.json"):
         if c not in cands:
@@ -303,8 +308,8 @@ def load_manifest(root: Path, settings: Settings, log: Callable[[str], None] = p
             try:
                 return validate_manifest(json.loads(cand.read_text("utf-8"))), str(cand)
             except Exception as e:  # noqa: BLE001
-                log(f"{cand} ungültig: {e}")
-    return validate_manifest(json.loads(json.dumps(DEFAULT_MANIFEST))), "eingebaut"
+                log(f"{cand} invalid: {e}")
+    return validate_manifest(json.loads(json.dumps(DEFAULT_MANIFEST))), "built-in"
 
 
 # --------------------------------------------------------------------------
@@ -377,7 +382,7 @@ def find_ruffle_release(tag: Optional[str], osname: str, arch: str) -> tuple[str
         rel = http_json(f"https://api.github.com/repos/{RUFFLE_REPO}/releases/tags/{tag}")
         asset = pick_ruffle_asset(rel.get("assets", []), osname, arch)
         if not asset:
-            raise RuntimeError(f"Ruffle {tag} hat keinen Desktop-Build für {osname}/{arch}")
+            raise RuntimeError(_("Ruffle {tag} has no desktop build for {os}/{arch}", tag=tag, os=osname, arch=arch))
         return rel["tag_name"], asset
     releases = http_json(f"https://api.github.com/repos/{RUFFLE_REPO}/releases?per_page=15")
     for rel in releases:
@@ -386,7 +391,7 @@ def find_ruffle_release(tag: Optional[str], osname: str, arch: str) -> tuple[str
         asset = pick_ruffle_asset(rel.get("assets", []), osname, arch)
         if asset:
             return rel["tag_name"], asset
-    raise RuntimeError(f"Kein Ruffle-Desktop-Build für {osname}/{arch} gefunden")
+    raise RuntimeError(_("No Ruffle desktop build found for {os}/{arch}", os=osname, arch=arch))
 
 
 def _find_ruffle_exe(folder: Path) -> Optional[Path]:
@@ -410,7 +415,7 @@ def _safe_extract(archive: Path, target: Path) -> None:
             for member in z.namelist():
                 dest = (target / member).resolve()
                 if not str(dest).startswith(str(target.resolve())):
-                    raise RuntimeError(f"Unsicherer Pfad im Archiv: {member}")
+                    raise RuntimeError(_("Unsafe path in archive: {name}", name=member))
             z.extractall(target)
     elif name.endswith(".tar.gz") or name.endswith(".tgz"):
         with tarfile.open(archive, "r:gz") as t:
@@ -420,7 +425,7 @@ def _safe_extract(archive: Path, target: Path) -> None:
                 for m in t.getmembers():
                     dest = (target / m.name).resolve()
                     if not str(dest).startswith(str(target.resolve())) or m.issym() or m.islnk():
-                        raise RuntimeError(f"Unsicherer Eintrag im Archiv: {m.name}")
+                        raise RuntimeError(_("Unsafe entry in archive: {name}", name=m.name))
                 t.extractall(target)
     elif name.endswith(".dmg") and sys.platform == "darwin":
         mnt = Path(tempfile.mkdtemp(prefix="ltl_dmg_"))
@@ -432,7 +437,7 @@ def _safe_extract(archive: Path, target: Path) -> None:
         finally:
             subprocess.run(["hdiutil", "detach", str(mnt)], capture_output=True)
     else:
-        raise RuntimeError(f"Unbekanntes Archivformat: {archive.name}")
+        raise RuntimeError(_("Unknown archive format: {name}", name=archive.name))
 
 
 class RuffleManager:
@@ -473,11 +478,11 @@ class RuffleManager:
                 ok = self.verify(cur, pins)
                 if ok is not False:
                     return cur
-                progress("Ruffle wurde verändert – wird neu installiert …", None)
+                progress(_("Ruffle was modified – reinstalling …"), None)
             elif not wanted_tag and not force_check:
                 return cur
         osname, arch = platform_key()
-        progress("Suche Ruffle-Release auf GitHub …", None)
+        progress(_("Looking for Ruffle release on GitHub …"), None)
         try:
             tag, asset = find_ruffle_release(wanted_tag, osname, arch)
         except Exception:  # noqa: BLE001
@@ -486,42 +491,46 @@ class RuffleManager:
             mirror = (mirrors or {}).get(platform_id())
             if not (wanted_tag and mirror and (pins or {}).get(platform_id())):
                 raise
-            progress("Ruffle-Release nicht erreichbar – nutze Spiegel …", None)
+            progress(_("Ruffle release not reachable – using mirror …"), None)
             tag, asset = wanted_tag, {"name": mirror.rsplit("/", 1)[-1], "browser_download_url": mirror}
         if cur and cur["tag"] == tag and not reinstall and self.verify(cur, pins) is not False:
-            progress(f"Ruffle {tag} ist aktuell.", 1.0)
+            progress(_("Ruffle {tag} is up to date.", tag=tag), 1.0)
             return cur
         with tempfile.TemporaryDirectory(prefix="ltl_") as td:
             arc = Path(td) / asset["name"]
             http_download(asset["browser_download_url"], arc, progress, f"Ruffle {tag}")
             digest = str(asset.get("digest") or "")
             if digest.startswith("sha256:") and sha256_file(arc) != digest[7:].lower():
-                raise NotApproved("Ruffle-Download stimmt nicht mit der Prüfsumme von GitHub überein.")
-            progress("Entpacke Ruffle …", None)
+                raise NotApproved(_("Ruffle download does not match GitHub's checksum."))
+            progress(_("Extracting Ruffle …"), None)
             dest = self.root / re.sub(r"[^A-Za-z0-9._-]", "_", tag)
             if dest.exists():
                 shutil.rmtree(dest)
             _safe_extract(arc, dest)
         exe = _find_ruffle_exe(dest)
         if not exe:
-            raise RuntimeError("Ruffle-Binary nach dem Entpacken nicht gefunden")
+            raise RuntimeError(_("Ruffle binary not found after extracting"))
         if not sys.platform.startswith("win"):
             exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         st = {"tag": tag, "asset": asset["name"], "exe": str(exe), "installed_at": int(time.time())}
         if self.verify(st, pins) is False:
-            raise NotApproved(f"Ruffle {tag} ({platform_id()}) entspricht nicht dem offiziellen Fingerabdruck.")
+            raise NotApproved(_("Ruffle {tag} ({platform}) does not match the official fingerprint.", tag=tag, platform=platform_id()))
         self.state_file.write_text(json.dumps(st, indent=2), "utf-8")
         # Alte Versionen aufräumen
         for d in self.root.iterdir():
             if d.is_dir() and d != dest:
                 shutil.rmtree(d, ignore_errors=True)
-        progress(f"Ruffle {tag} installiert.", 1.0)
+        progress(_("Ruffle {tag} installed.", tag=tag), 1.0)
         return st
 
 
 # --------------------------------------------------------------------------
 # SWF-Verwaltung
 # --------------------------------------------------------------------------
+def _game_name(game: dict) -> str:
+    return f"{game['title']} {game.get('variant') or ''}".strip()
+
+
 class HashMismatch(Exception):
     pass
 
@@ -572,11 +581,11 @@ class SwfManager:
             return game["sha256"].lower(), "manifest"
         if self.strict or self.bundled_path(game):
             # Mitgelieferte Dateien werden nur über games.json gepinnt (pin_hashes.py)
-            return None, "keiner"
+            return None, "none"
         known = self._tofu().get(game["id"])
         if known and known.get("url") == self._source_key(game):
-            return known["sha256"], "erster Download"
-        return None, "keiner"
+            return known["sha256"], "first download"
+        return None, "none"
 
     def status(self, game: dict) -> dict:
         bundled = self.bundled_path(game)
@@ -592,36 +601,36 @@ class SwfManager:
         """Gibt (pfad, sha256, verifikation) zurück. Wirft HashMismatch bei Abweichung."""
         bundled = self.bundled_path(game)
         if bundled:
-            self._require_swf(bundled, f"Mitgelieferte Datei {game.get('file')}")
+            self._require_swf(bundled, _("Bundled file {file}", file=game.get("file")))
             return self._verify(game, bundled)
         p = self.path_for(game)
         if redownload or not p.exists():
             if not game.get("url"):
-                raise RuntimeError(f"Mitgelieferte Datei fehlt: {game.get('file')}\n"
-                                   "Bitte den Launcher vollständig (mit swf-Ordner) neu herunterladen.")
+                raise RuntimeError(_("Bundled file is missing: {file}\nPlease download the launcher again.",
+                                     file=game.get("file")))
             tmp = p.with_name(p.name + ".new")
             http_download(game["url"], tmp, progress, f"{game['title']} {game.get('variant', '')}".strip())
             if not is_swf(tmp):
                 tmp.unlink(missing_ok=True)
-                raise RuntimeError("Die heruntergeladene Datei ist keine SWF (Quelle blockiert oder geändert?)")
+                raise RuntimeError(_("The downloaded file is not a SWF (source blocked or changed?)"))
             os.replace(tmp, p)
-        self._require_swf(p, f"Gespeicherte Datei {p.name}")
+        self._require_swf(p, _("Saved file {file}", file=p.name))
         return self._verify(game, p)
 
     @staticmethod
     def _require_swf(p: Path, what: str) -> None:
         if not is_swf(p):
             size = p.stat().st_size if p.exists() else 0
-            raise RuntimeError(f"{what} ist keine gültige SWF ({size} Bytes) – "
-                               "vermutlich unvollständig heruntergeladen. Bitte ersetzen.")
+            raise RuntimeError(_("{what} is not a valid SWF ({size} bytes) – probably an incomplete download. "
+                                 "Please replace it.", what=what, size=size))
 
     def fetch_raw(self, game: dict, progress: Progress) -> Path:
         """NUR Entwicklermodus (Hash-Export): Datei holen, ohne gegen einen Hash zu prüfen."""
         if self.strict:
-            raise NotApproved("Nur im Entwicklermodus verfügbar.")
+            raise NotApproved(_("Only available in developer mode."))
         bundled = self.bundled_path(game)
         if bundled:
-            self._require_swf(bundled, f"Mitgelieferte Datei {game.get('file')}")
+            self._require_swf(bundled, _("Bundled file {file}", file=game.get("file")))
             return bundled
         p = self.path_for(game)
         if game.get("url"):
@@ -632,21 +641,21 @@ class SwfManager:
             except Exception:  # noqa: BLE001 – Quelle offline: vorhandene (z. B. manuell gewählte) Datei nutzen
                 if not p.exists():
                     raise
-        self._require_swf(p, f"Datei {p.name}")
+        self._require_swf(p, _("File {file}", file=p.name))
         return p
 
     def import_local(self, game: dict, src: Path) -> tuple[Path, str, str]:
         """Manuell gewählte SWF übernehmen (z. B. wenn die Quelle offline ist).
         Wird nur akzeptiert, wenn sie zum Hash passt (falls einer bekannt ist)."""
         if not is_swf(src):
-            raise RuntimeError("Die gewählte Datei ist keine SWF.")
+            raise RuntimeError(_("The selected file is not a SWF."))
         exp, src_kind = self.expected_hash(game)
         if exp is None and self.strict:
-            raise NotApproved(f"{game['title']} {game.get('variant', '')}: keine offiziell freigegebene Version hinterlegt.")
+            raise NotApproved(_("{game}: no officially approved version on record.", game=_game_name(game)))
         h = sha256_file(src)
         if exp and h != exp:
-            raise HashMismatch(f"Datei passt nicht zur offiziellen Version ({src_kind}).\n"
-                               f"Erwartet: {exp}\nGefunden: {h}")
+            raise HashMismatch(_("File does not match the official version ({src}).\nExpected: {exp}\nFound: {got}",
+                                 src=_(src_kind), exp=exp, got=h))
         shutil.copyfile(src, self.path_for(game))
         return self._verify(game, self.path_for(game))
 
@@ -654,21 +663,19 @@ class SwfManager:
         h = sha256_file(p)
         exp, src = self.expected_hash(game)
         if exp is None and self.strict:
-            raise NotApproved(f"{game['title']} {game.get('variant', '')}: keine offiziell freigegebene Version "
-                              "hinterlegt – Start nicht erlaubt.")
+            raise NotApproved(_("{game}: no officially approved version on record – launch not allowed.",
+                                game=_game_name(game)))
         if exp is None and self.bundled_path(game) == p:
-            return p, h, "mitgeliefert, nicht gepinnt"
+            return p, h, "bundled, not pinned"
         if exp is None:
             t = self._tofu()
             t[game["id"]] = {"url": self._source_key(game), "sha256": h, "first_seen": int(time.time())}
             self._save_tofu(t)
-            return p, h, "nicht gepinnt (Hash gemerkt)"
+            return p, h, "not pinned (hash remembered)"
         if h != exp:
-            raise HashMismatch(
-                f"SHA-256 stimmt nicht mit der offiziellen Version überein!\n"
-                f"Erwartet ({src}): {exp}\nGefunden: {h}"
-            )
-        return p, h, "verifiziert" if src == "manifest" else "wie erster Download"
+            raise HashMismatch(_("SHA-256 does not match the official version!\nExpected ({src}): {exp}\nFound: {got}",
+                                 src=_(src), exp=exp, got=h))
+        return p, h, "verified" if src == "manifest" else "same as first download"
 
     def clear(self) -> None:
         """Löscht nur heruntergeladene Dateien. Festgelegte Hashes bleiben davon unberührt."""
