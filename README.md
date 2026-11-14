@@ -8,7 +8,17 @@ and the Flash games run in a fixed version of [Ruffle](https://github.com/ruffle
 
 ![Main menu](docs/preview_main.png)
 
-> **Status: test version (v0.1).** The user interface is currently in German.
+[![Latest release](https://img.shields.io/github/v/release/BlwLeon/Lucky-Tower-Speedrun-Helper)](https://github.com/BlwLeon/Lucky-Tower-Speedrun-Helper/releases/latest)
+![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+> The user interface is currently in German.
+
+## Platform support
+
+Version 1.0 officially supports **Windows (64-bit)** only. That is the only platform with a pinned and verified Ruffle build.
+
+**Need macOS or Linux?** Please [open an issue](https://github.com/BlwLeon/Lucky-Tower-Speedrun-Helper/issues/new) or contact the board moderators. Other operating systems will gladly be supported on request: we only need to pin and verify the Ruffle build for that platform. The source code already runs on macOS and Linux.
 
 ## Supported games
 
@@ -31,11 +41,20 @@ and the Flash games run in a fixed version of [Ruffle](https://github.com/ruffle
 - **Diagnostics**: Errors are written to `crash.log`, clicks to `session.log`. If the UI freezes for more than 10 s, a thread dump goes to `crash_native.log`.
 - Uses only the Python standard library.
 
-## Usage
+## Installation (Windows)
 
-**Windows EXE:** Download `LuckyTowerLauncher.exe` from the releases (once published) and run it.
+1. Download **`LuckyTowerLauncher.exe`** from the [latest release](https://github.com/BlwLeon/Lucky-Tower-Speedrun-Helper/releases/latest).
+2. Optional: compare its SHA-256 with `LuckyTowerLauncher.exe.sha256` from the same release (PowerShell: `Get-FileHash .\LuckyTowerLauncher.exe`).
+3. Run it. No installation is needed. On first start, Ruffle is downloaded automatically (about 30 MB).
 
-**From source** (Python 3.9+; on Linux you may need `sudo apt install python3-tk`):
+> The EXE is not code-signed, so Windows SmartScreen may show "Windows protected your PC". Click **More info → Run anyway**.
+> Every release EXE is built by GitHub Actions directly from this repository ([workflow](.github/workflows/release.yml)).
+
+**For runs, use the official EXE from the releases.** The launch log records whether the EXE or the source code was used.
+
+### Running from source (moderators / development)
+
+Requires Python 3.9+ (on Linux you may need `sudo apt install python3-tk`).
 
 ```
 git clone https://github.com/BlwLeon/Lucky-Tower-Speedrun-Helper
@@ -49,6 +68,7 @@ python launcher.py
 - macOS / Linux: `./build.sh` → `dist/LuckyTowerLauncher`
 
 Both scripts use PyInstaller and bundle `swf/` and `games.json` into the executable.
+Official releases are built by the [release workflow](.github/workflows/release.yml) as soon as a GitHub release is published. It runs the tests, builds the EXE on Windows and attaches the EXE, its SHA-256 and the Ruffle mirror to the release.
 
 ## Official vs. developer mode
 
@@ -86,6 +106,7 @@ New *bundled* SWFs still need a new build.
   "manifest_version": 1,
   "ruffle_tag": "nightly-2026-11-14",
   "ruffle_sha256": { "windows-x86_64": "d1b8bcf5…" },
+  "ruffle_mirror": { "windows-x86_64": "https://github.com/…/releases/download/v1.0.0/ruffle-…-windows-x86_64.zip" },
   "games": [
     {
       "id": "lt2_glitchless",
@@ -107,16 +128,21 @@ New *bundled* SWFs still need a new build.
 - Entries with the same `title` are grouped on one page, one button each.
 - `ruffle_args` are passed to Ruffle, for example to enforce rendering settings for runs.
 - `ruffle_sha256`: hash of the Ruffle executable per platform (`windows-x86_64`, `macos-arm64`, `linux-x86_64`, …). Platforms without an entry still run, and the launch log marks them as unverified.
+- `ruffle_mirror`: fallback download per platform, used if the pinned Ruffle release is no longer available on GitHub. It is used only when `ruffle_sha256` is pinned for that platform, so the binary is still verified.
 
 ## Data folder
 
 | OS | Path |
 |---|---|
 | Windows | `%LOCALAPPDATA%\LuckyTowerLauncher` |
-| macOS | `~/Library/Application Support/LuckyTowerLauncher` |
-| Linux | `~/.local/share/LuckyTowerLauncher` |
+| macOS (source) | `~/Library/Application Support/LuckyTowerLauncher` |
+| Linux (source) | `~/.local/share/LuckyTowerLauncher` |
 
 It contains `ruffle/`, a download cache in `games/`, `settings.json`, `launch_log.jsonl`, `session.log`, `crash.log` and `logs/` with Ruffle output.
+
+## Reporting problems
+
+Please [open an issue](https://github.com/BlwLeon/Lucky-Tower-Speedrun-Helper/issues/new) and attach `session.log`, `crash.log` and `crash_native.log` from the data folder (if present).
 
 ## Tests
 

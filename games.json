@@ -4,6 +4,9 @@
   "ruffle_sha256": {
     "windows-x86_64": "d1b8bcf513075938a27c92bac34c7625e95b5dadc2652e19f1da46397046c235"
   },
+  "ruffle_mirror": {
+    "windows-x86_64": "https://github.com/BlwLeon/Lucky-Tower-Speedrun-Helper/releases/download/v1.0.0/ruffle-nightly-2026_11_14-windows-x86_64.zip"
+  },
   "games": [
     {
       "id": "lt1",

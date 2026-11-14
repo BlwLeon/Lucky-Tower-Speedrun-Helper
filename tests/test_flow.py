@@ -272,6 +272,17 @@ try: rm.ensure("nightly-2026-11-10", lambda t,f:None, reinstall=True); raise Sys
 except core.NotApproved as e: assert "Prüfsumme" in str(e)
 releases[1]["assets"][0]["digest"]="sha256:"+core.sha256_file(srv/"ruffle-nightly-2026_11_10-linux-x86_64.tar.gz")
 assert rm.ensure("nightly-2026-11-10", lambda t,f:None, reinstall=True, pins={pid:real})["tag"]=="nightly-2026-11-10"
+# Ruffle-Release verschwunden -> Spiegel (nur mit Pin), Binary wird geprüft
+_hj=core.http_json
+def gone(url,timeout=20): raise OSError("404 release deleted")
+core.http_json=gone
+mir={pid: base+"/ruffle-nightly-2026_11_10-linux-x86_64.tar.gz"}
+assert rm.ensure("nightly-2026-11-10", lambda t,f:None, reinstall=True, pins={pid:real}, mirrors=mir)["tag"]=="nightly-2026-11-10"
+try: rm.ensure("nightly-2026-11-10", lambda t,f:None, reinstall=True, mirrors=mir); raise SystemExit("mirror without pin used")
+except OSError: pass
+try: rm.ensure("nightly-2026-11-10", lambda t,f:None, reinstall=True, pins={pid:"1"*64}, mirrors=mir); raise SystemExit("bad mirror accepted")
+except core.NotApproved: pass
+core.http_json=_hj
 print("ruffle pin ok")
 
 print("ALLE TESTS OK")

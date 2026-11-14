@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 APP_NAME = "LuckyTowerLauncher"
-APP_VERSION = "0.1.0"
+APP_VERSION = "1.0.0"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://www.speedrun.com/series/Lucky_Tower_Series)"
 
 RUFFLE_REPO = "ruffle-rs/ruffle"
@@ -57,6 +57,9 @@ DEFAULT_MANIFEST: dict = {
     "ruffle_tag": "nightly-2026-11-14",
     "ruffle_sha256": {
         "windows-x86_64": "d1b8bcf513075938a27c92bac34c7625e95b5dadc2652e19f1da46397046c235"
+    },
+    "ruffle_mirror": {
+        "windows-x86_64": "https://github.com/BlwLeon/Lucky-Tower-Speedrun-Helper/releases/download/v1.0.0/ruffle-nightly-2026_11_14-windows-x86_64.zip"
     },
     "games": [
         {
@@ -252,6 +255,9 @@ def check_official(m: dict) -> dict:
     pins = m.get("ruffle_sha256") or {}
     if not isinstance(pins, dict) or any(not re.fullmatch(r"[0-9a-fA-F]{64}", str(v)) for v in pins.values()):
         raise ValueError("Ungültiges 'ruffle_sha256'")
+    mirrors = m.get("ruffle_mirror") or {}
+    if not isinstance(mirrors, dict) or any(not str(v).startswith("https://") for v in mirrors.values()):
+        raise ValueError("Ungültiges 'ruffle_mirror' (nur https-URLs)")
     return m
 
 
@@ -457,7 +463,7 @@ class RuffleManager:
             return False
 
     def ensure(self, wanted_tag: Optional[str], progress: Progress, force_check: bool = False,
-               pins: Optional[dict] = None, reinstall: bool = False) -> dict:
+               pins: Optional[dict] = None, reinstall: bool = False, mirrors: Optional[dict] = None) -> dict:
         """Stellt sicher, dass Ruffle installiert ist.
         - Gepinnter Tag: genau diese Version (bei pins zusätzlich per SHA-256 der Binary geprüft).
         - Kein Tag (nur Entwicklermodus): vorhandene Version reicht; force_check sucht nach Updates."""
@@ -472,7 +478,16 @@ class RuffleManager:
                 return cur
         osname, arch = platform_key()
         progress("Suche Ruffle-Release auf GitHub …", None)
-        tag, asset = find_ruffle_release(wanted_tag, osname, arch)
+        try:
+            tag, asset = find_ruffle_release(wanted_tag, osname, arch)
+        except Exception:  # noqa: BLE001
+            # Ruffle-Release nicht (mehr) verfügbar: Spiegel aus dem Launcher-Release nutzen.
+            # Nur mit festgelegtem Fingerabdruck – die Binary wird danach geprüft.
+            mirror = (mirrors or {}).get(platform_id())
+            if not (wanted_tag and mirror and (pins or {}).get(platform_id())):
+                raise
+            progress("Ruffle-Release nicht erreichbar – nutze Spiegel …", None)
+            tag, asset = wanted_tag, {"name": mirror.rsplit("/", 1)[-1], "browser_download_url": mirror}
         if cur and cur["tag"] == tag and not reinstall and self.verify(cur, pins) is not False:
             progress(f"Ruffle {tag} ist aktuell.", 1.0)
             return cur

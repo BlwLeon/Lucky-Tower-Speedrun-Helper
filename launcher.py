@@ -486,7 +486,9 @@ class Launcher:
         return None
 
     def _ruffle_ready(self, **kw) -> dict:
-        st = self.ruffle.ensure(self._wanted_ruffle_tag(), self.bg_progress, pins=self._ruffle_pins(), **kw)
+        mirrors = self.manifest.get("ruffle_mirror") if self._ruffle_pins() else None
+        st = self.ruffle.ensure(self._wanted_ruffle_tag(), self.bg_progress, pins=self._ruffle_pins(),
+                                mirrors=mirrors, **kw)
         if not self.dev and self.ruffle.verify(st, self._ruffle_pins()) is None:
             st = dict(st, verification="Ruffle-Binary für diese Plattform nicht gepinnt")
         return st

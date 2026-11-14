@@ -1,0 +1,81 @@
+name: Release
+
+# Builds the official Windows EXE when a GitHub release is published
+# and attaches EXE, SHA-256 and the Ruffle mirror to that release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and upload to (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  PYTHONUTF8: "1"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: End-to-end tests
+        run: python tests/test_flow.py
+      - name: Check manifest is fully pinned
+        run: python -c "import ltl_core as c, json; c.check_official(c.validate_manifest(json.load(open('games.json', encoding='utf-8')))); print('games.json OK')"
+
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify bundled SWFs against games.json
+        run: python pin_hashes.py && git diff --exit-code games.json
+
+      - name: Build EXE
+        run: |
+          python -m pip install --upgrade pip pyinstaller
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name LuckyTowerLauncher --add-data "swf;swf" --add-data "games.json;." launcher.py
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $h = (Get-FileHash dist/LuckyTowerLauncher.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  LuckyTowerLauncher.exe" | Out-File -Encoding ascii -NoNewline dist/LuckyTowerLauncher.exe.sha256
+          Get-Content dist/LuckyTowerLauncher.exe.sha256
+
+      - name: Fetch Ruffle mirror and verify pinned ruffle.exe
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $m = Get-Content games.json -Raw | ConvertFrom-Json
+          $url = $m.ruffle_mirror.'windows-x86_64'
+          $name = Split-Path $url -Leaf
+          gh release download $m.ruffle_tag --repo ruffle-rs/ruffle --pattern $name --dir mirror
+          Expand-Archive "mirror/$name" -DestinationPath mirror/x
+          $exe = (Get-FileHash mirror/x/ruffle.exe -Algorithm SHA256).Hash.ToLower()
+          if ($exe -ne $m.ruffle_sha256.'windows-x86_64') { throw "ruffle.exe hash $exe does not match games.json" }
+          Write-Host "ruffle.exe verified: $exe"
+
+      - name: Upload release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload $env:TAG dist/LuckyTowerLauncher.exe dist/LuckyTowerLauncher.exe.sha256 (Get-ChildItem mirror/*.zip).FullName --clobber --repo $env:GITHUB_REPOSITORY
