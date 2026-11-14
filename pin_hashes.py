@@ -1,8 +1,8 @@
 """
-Schreibt die SHA-256-Hashes der mitgelieferten SWFs (swf/*.swf) in games.json.
+Writes the SHA-256 hashes of the bundled SWFs (swf/*.swf) into games.json.
 
-Aufruf (im Repo-Ordner):  python pin_hashes.py
-Danach games.json + swf/ committen. Nur so gepinnte Dateien startet der Launcher.
+Usage (in the repository folder):  python pin_hashes.py
+Then commit games.json + swf/. The launcher only starts pinned files.
 """
 import json
 import sys
@@ -21,16 +21,16 @@ for g in manifest["games"]:
     p = here / f if f else None
     if p and p.is_file():
         if not core.is_swf(p):
-            sys.exit(f"FEHLER: {f} ist keine SWF-Datei.")
+            sys.exit(f"ERROR: {f} is not a SWF file.")
         old, g["sha256"] = g.get("sha256"), core.sha256_file(p)
-        mark = "unverändert" if old == g["sha256"] else ("NEU" if not old else "GEÄNDERT")
+        mark = "unchanged" if old == g["sha256"] else ("NEW" if not old else "CHANGED")
         print(f"{g['id']:16} {g['sha256']}  {f}  [{mark}]")
     else:
         missing.append(g["id"])
-        print(f"{g['id']:16} (keine Datei {f or '-'} – Hash bleibt {g.get('sha256') or 'leer'})")
+        print(f"{g['id']:16} (no file {f or '-'} – hash stays {g.get('sha256') or 'empty'})")
 
 target.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", "utf-8")
-print(f"\ngames.json geschrieben.")
+print("\ngames.json written.")
 if missing:
-    print("Ohne mitgelieferte Datei:", ", ".join(missing),
-          "\n→ werden von der URL geladen (Hash per 'Einstellungen > Hashes exportieren' ermitteln).")
+    print("Not bundled:", ", ".join(missing),
+          "\n-> downloaded from their URL (get the hash via developer mode: Settings > Export hashes).")

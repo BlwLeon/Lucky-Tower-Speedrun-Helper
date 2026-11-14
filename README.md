@@ -12,7 +12,7 @@ and the Flash games run in a fixed version of [Ruffle](https://github.com/ruffle
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> The user interface is currently in German.
+> The interface is available in **English** (default) and **German**. Switch it under *Settings → Language*.
 
 ## Platform support
 
@@ -38,6 +38,7 @@ Version 1.0 officially supports **Windows (64-bit)** only. That is the only plat
 - **Steam detection** for Lucky Tower Ultimate across all Steam library folders. If the game is not installed, the launcher opens the store page.
 - **Launch log** (`launch_log.jsonl`): Each start records time, game, hash and Ruffle version, so moderators have something to check during verification.
 - **Status bar**: Shows whether the game is running and the session time, and reports Ruffle errors with Ruffle's own output.
+- **English / German interface**, switchable in the settings (the choice is remembered).
 - **Diagnostics**: Errors are written to `crash.log`, clicks to `session.log`. If the UI freezes for more than 10 s, a thread dump goes to `crash_native.log`.
 - Uses only the Python standard library.
 
@@ -79,7 +80,7 @@ Official releases are built by the [release workflow](.github/workflows/release.
 
 **Developer mode** is for moderators only. Start it with `python launcher.py --dev` (or `LTL_DEV=1`).
 - A red banner shows that it is not valid for runs.
-- It enables **Hashes exportieren**, Ruffle updates, local `games.json` files and `manifest_url`.
+- It enables **Export hashes**, Ruffle updates, local `games.json` files and `manifest_url`.
 - Every start is recorded in `launch_log.jsonl` with `"mode"` and `"build"` (`exe` or `source`), so runs from developer mode or a modified source checkout are easy to spot.
 
 ## For moderators
@@ -90,7 +91,7 @@ Official releases are built by the [release workflow](.github/workflows/release.
 2. Run `python pin_hashes.py`. It writes the new SHA-256 values into `games.json`.
 3. Commit `swf/` and `games.json`, then build a new release.
 
-For downloaded games (Lucky Tower 1) and new Ruffle versions, start the launcher in **developer mode** and use **Einstellungen → Hashes exportieren**.
+For downloaded games (Lucky Tower 1) and new Ruffle versions, start the launcher in **developer mode** and use **Settings → Export hashes**.
 It writes `games_pinned.json` with all SWF hashes, the Ruffle version and the Ruffle executable's hash for your platform. Copy the values into `games.json`.
 
 ### Rolling out changes without a new build
@@ -138,7 +139,7 @@ New *bundled* SWFs still need a new build.
 | macOS (source) | `~/Library/Application Support/LuckyTowerLauncher` |
 | Linux (source) | `~/.local/share/LuckyTowerLauncher` |
 
-It contains `ruffle/`, a download cache in `games/`, `settings.json`, `launch_log.jsonl`, `session.log`, `crash.log` and `logs/` with Ruffle output.
+It contains `ruffle/`, a download cache in `games/`, `settings.json` (incl. language), `launch_log.jsonl`, `session.log`, `crash.log` and `logs/` with Ruffle output.
 
 ## Reporting problems
 
