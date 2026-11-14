@@ -1,0 +1,45 @@
+{
+  "manifest_version": 1,
+  "ruffle_tag": "nightly-2026-11-14",
+  "ruffle_sha256": {
+    "windows-x86_64": "d1b8bcf513075938a27c92bac34c7625e95b5dadc2652e19f1da46397046c235"
+  },
+  "ruffle_mirror": {
+    "windows-x86_64": "https://github.com/BlwLeon/Lucky-Tower-Speedrun-Helper/releases/download/v1.0.0/ruffle-nightly-2026_11_14-windows-x86_64.zip"
+  },
+  "games": [
+    {
+      "id": "lt1",
+      "title": "Lucky Tower",
+      "variant": "Official",
+      "label": "SPIELEN",
+      "file": "swf/lt1.swf",
+      "url": "http://uploads.ungrounded.net/551000/551891_lucky_towa_NGFINALcs3.swf",
+      "sha256": "a74be05574ffe4755ad188a1ea79ca82e622af39d0a461ec978fe8ae86cb0821",
+      "ruffle_args": [],
+      "source_note": "Official Newgrounds release (downloaded on first start unless swf/lt1.swf is present)"
+    },
+    {
+      "id": "lt2_qms",
+      "title": "Lucky Tower 2",
+      "variant": "Glitch (QMS)",
+      "label": "GLITCH (QMS)",
+      "file": "swf/lt2_qms.swf",
+      "url": "https://www.speedrun.com/static/resource/qp84z.swf?v=7371456",
+      "sha256": "cf4d70d0bff592d61d1521e8174742ee27c0aee2abeef2c6f0e8b1c03f16961e",
+      "ruffle_args": [],
+      "source_note": "Community patch for the glitched categories, originally hosted as speedrun.com resource qp84z.swf"
+    },
+    {
+      "id": "lt2_glitchless",
+      "title": "Lucky Tower 2",
+      "variant": "Glitchless",
+      "label": "GLITCHLESS",
+      "file": "swf/lt2_glitchless.swf",
+      "url": null,
+      "sha256": "0c455e25e19056397bb29d31b4701d44da95402b74779e86885f86646454574a",
+      "ruffle_args": [],
+      "source_note": "Unpatched original from BlueMaxima's Flashpoint (localflash/lucky-tower-2/lucky tower 2.swf)"
+    }
+  ]
+}
