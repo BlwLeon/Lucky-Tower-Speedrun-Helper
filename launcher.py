@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import faulthandler
 import json
+import os
 import queue
 import sys
 import threading
@@ -51,7 +52,9 @@ def lerp_color(c1: str, c2: str, t: float) -> str:
 class Launcher:
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title(f"Lucky Tower Launcher {core.APP_VERSION}")
+        # Entwicklermodus nur für Moderatoren: python launcher.py --dev  (oder LTL_DEV=1)
+        self.dev = "--dev" in sys.argv or os.environ.get("LTL_DEV") == "1"
+        root.title(f"Lucky Tower Launcher {core.APP_VERSION}" + ("  [ENTWICKLERMODUS]" if self.dev else ""))
         root.resizable(False, False)
         self.cv = tk.Canvas(root, width=W, height=H, highlightthickness=0, bg=SKY_BOTTOM)
         self.cv.pack()
@@ -66,8 +69,11 @@ class Launcher:
         self._install_crash_handlers()
         self.settings = core.Settings.load(self.data)
         self.ruffle = core.RuffleManager(self.data)
-        self.swfs = core.SwfManager(self.data)
-        self.manifest, self.manifest_src = core.load_manifest(self.data, self.settings, self._log)
+        self.swfs = core.SwfManager(self.data, strict=not self.dev)
+        if self.dev:
+            self.manifest, self.manifest_src = core.load_manifest(self.data, self.settings, self._log)
+        else:
+            self.manifest, self.manifest_src = core.load_official_manifest(self._log)
 
         self.q: "queue.Queue[Callable[[], None]]" = queue.Queue()
         self.busy = False
@@ -82,6 +88,28 @@ class Launcher:
         self.show_main()
         self._refresh_status()
         self.root.after(40, self._tick)
+        if not self.dev:
+            threading.Thread(target=self._check_remote_manifest, daemon=True).start()
+
+    def _check_remote_manifest(self) -> None:
+        """Übernimmt ein neueres offizielles Manifest aus dem GitHub-Repo (nur vollständig gepinnt)."""
+        try:
+            remote = core.fetch_remote_official()
+        except Exception as e:  # noqa: BLE001
+            self.post(lambda m=str(e): self.trail(f"Offizielles Online-Manifest nicht verfügbar: {m}"))
+            return
+        if remote == self.manifest:
+            return
+
+        def apply():
+            if self.busy:
+                self.root.after(500, apply)
+                return
+            self.manifest, self.manifest_src = remote, "offiziell (GitHub)"
+            self.trail("Offizielles Manifest von GitHub übernommen")
+            self.set_status("Offizielle Versionsliste von GitHub aktualisiert.", None)
+            self._refresh_page()
+        self.post(apply)
 
     # ------------------------------------------------------------------ crash
     def _install_crash_handlers(self) -> None:
@@ -237,6 +265,10 @@ class Launcher:
 
         # Titel
         self._outlined_text(W // 2, 34, "LUCKY TOWER LAUNCHER", self.f_title, CREAM, INK, 3)
+        if self.dev:
+            self.cv.create_rectangle(0, 62, W, 84, fill="#a8322d", outline="")
+            self.cv.create_text(W // 2, 73, text="ENTWICKLERMODUS – nur für Moderatoren, nicht für Runs zugelassen",
+                                fill="white", font=self.f_info)
 
         # Statusleiste
         cv.create_rectangle(0, H - 30, W, H, fill=BAR, outline="")
@@ -306,7 +338,7 @@ class Launcher:
             self._outlined_text(W // 2, 300, self.subtitle, self.f_info, CREAM, INK, 2, tags=("ui",))
         n = len(self.buttons)
         bw = 290
-        bh, gap = (40, 10) if n <= 4 else (36, 8)
+        bh, gap = (40, 10) if n <= 4 else (34, 6)
         y0 = 318
         for i, (label, action, info, enabled) in enumerate(self.buttons):
             y = y0 + i * (bh + gap)
@@ -372,10 +404,12 @@ class Launcher:
         btns = []
         for g in games:
             st = self.swfs.status(g)
-            if st["expected"]:
+            if st["expected"] and st["source"] == "manifest":
+                ver = f"offiziell freigegeben ✓ (SHA-256 {st['expected'][:12]}…)"
+            elif st["expected"]:
                 ver = f"SHA-256 {st['expected'][:12]}… ({st['source']})"
             else:
-                ver = "SHA-256 noch nicht festgelegt"
+                ver = "nicht freigegeben" if not self.dev else "SHA-256 noch nicht festgelegt"
             if st.get("bundled"):
                 cached = "mitgeliefert"
             elif st["cached"]:
@@ -406,14 +440,24 @@ class Launcher:
         cur = self.ruffle.installed()
         pinned = self._wanted_ruffle_tag()
         rinfo = f"Installiert: {cur['tag'] if cur else 'keins'}" + (f"  ·  festgelegt: {pinned}" if pinned else "  ·  neueste Version")
-        btns = [
-            ("RUFFLE AKTUALISIEREN", self.update_ruffle, rinfo, True),
-            ("HASHES EXPORTIEREN", self.export_hashes,
-             "Lädt alle SWFs, berechnet SHA-256 und speichert ein games.json mit festgeschriebenen Hashes", True),
-            ("SPIELE NEU LADEN", self.clear_cache, "Löscht die SWF-Cache-Dateien und gemerkten Hashes", True),
-            ("DATENORDNER ÖFFNEN", lambda: core.open_folder(self.data), str(self.data), True),
-            ("ZURÜCK", self.back, f"Manifest: {self.manifest_src}", True),
-        ]
+        if self.dev:
+            btns = [
+                ("RUFFLE AKTUALISIEREN", self.update_ruffle, rinfo, True),
+                ("HASHES EXPORTIEREN", self.export_hashes,
+                 "Lädt alle SWFs, berechnet SHA-256 und speichert games_pinned.json (inkl. Ruffle-Fingerabdruck)", True),
+                ("DOWNLOADS NEU LADEN", self.clear_cache, "Löscht heruntergeladene SWFs und gemerkte Hashes", True),
+                ("DATENORDNER ÖFFNEN", lambda: core.open_folder(self.data), str(self.data), True),
+                ("ZURÜCK", self.back, f"Manifest: {self.manifest_src}", True),
+            ]
+        else:
+            btns = [
+                ("RUFFLE REPARIEREN", self.reinstall_ruffle,
+                 rinfo + "  ·  installiert die offizielle Version neu", True),
+                ("DOWNLOADS NEU LADEN", self.clear_cache,
+                 "Lädt heruntergeladene Spiele neu – es werden weiterhin nur die offiziellen Versionen akzeptiert", True),
+                ("DATENORDNER ÖFFNEN", lambda: core.open_folder(self.data), str(self.data), True),
+                ("ZURÜCK", self.back, f"Versionsliste: {self.manifest_src}", True),
+            ]
         self._set_page("EINSTELLUNGEN", btns)
 
     # ---------------------------------------------------------------- status
@@ -424,24 +468,41 @@ class Launcher:
     def _refresh_status(self) -> None:
         self.cv.itemconfigure(self.status_id, text=self.status_text)
         cur = self.ruffle.installed()
-        self.cv.itemconfigure(self.right_id, text=f"Ruffle: {cur['tag'] if cur else '—'}  ·  v{core.APP_VERSION}")
+        mode = "DEV" if self.dev else "Offiziell"
+        self.cv.itemconfigure(self.right_id, text=f"{mode}  ·  Ruffle: {cur['tag'] if cur else '—'}  ·  v{core.APP_VERSION}")
         w = int(W * self.progress) if self.progress is not None else 0
         self.cv.coords(self.pbar_id, 0, H - 32, w, H - 30)
 
     # ---------------------------------------------------------------- aktionen
     def _wanted_ruffle_tag(self) -> Optional[str]:
-        return self.settings.ruffle_tag_override or self.manifest.get("ruffle_tag")
+        if self.dev:
+            return self.settings.ruffle_tag_override or self.manifest.get("ruffle_tag")
+        return self.manifest["ruffle_tag"]
+
+    def _ruffle_pins(self) -> Optional[dict]:
+        # Fingerabdrücke gelten nur für die im Manifest festgelegte Ruffle-Version
+        if self._wanted_ruffle_tag() == self.manifest.get("ruffle_tag"):
+            return self.manifest.get("ruffle_sha256")
+        return None
+
+    def _ruffle_ready(self, **kw) -> dict:
+        st = self.ruffle.ensure(self._wanted_ruffle_tag(), self.bg_progress, pins=self._ruffle_pins(), **kw)
+        if not self.dev and self.ruffle.verify(st, self._ruffle_pins()) is None:
+            st = dict(st, verification="Ruffle-Binary für diese Plattform nicht gepinnt")
+        return st
 
     def launch(self, game: dict) -> None:
         name = f"{game['title']} – {game.get('variant') or 'Standard'}"
 
         def work(redownload: bool = False, local: Optional[Path] = None):
-            rs = self.ruffle.ensure(self._wanted_ruffle_tag(), self.bg_progress)
+            rs = self._ruffle_ready()
             try:
                 if local:
                     swf, h, ver = self.swfs.import_local(game, local)
                 else:
                     swf, h, ver = self.swfs.ensure(game, self.bg_progress, redownload=redownload)
+            except core.NotApproved:
+                raise
             except core.HashMismatch as e:
                 if redownload or local or self.swfs.bundled_path(game) or not game.get("url"):
                     raise RuntimeError(f"{e}\n\nDiese Datei ist keine zugelassene Version und wird nicht gestartet.")
@@ -455,8 +516,13 @@ class Launcher:
             self.bg_progress(f"Starte {name} …", None)
             log_path = self.data / "logs" / f"ruffle_{game['id']}.log"
             proc = core.launch_swf(rs["exe"], swf, list(game.get("ruffle_args") or []), log_path)
-            core.write_launch_log(self.data, {"game": game["id"], "url": game.get("url"), "file": game.get("file"),
-                                              "sha256": h, "verification": ver, "ruffle": rs["tag"]})
+            core.write_launch_log(self.data, {
+                "game": game["id"], "url": game.get("url"), "file": game.get("file"),
+                "sha256": h, "verification": ver, "ruffle": rs["tag"],
+                "ruffle_verification": rs.get("verification", "ok"),
+                "mode": "dev" if self.dev else "official",
+                "build": "exe" if getattr(sys, "frozen", False) else "source",
+                "manifest": self.manifest_src})
             self._watch(proc, name, f"SHA-256 {h[:12]}… ({ver})  ·  Ruffle {rs['tag']}", log_path)
             return self._refresh_page
 
@@ -518,15 +584,25 @@ class Launcher:
         except OSError as e:
             messagebox.showerror("Fehler", f"Steam konnte nicht geöffnet werden:\n{e}")
 
+    def reinstall_ruffle(self) -> None:
+        def work():
+            st = self._ruffle_ready(reinstall=True)
+            self.bg_progress(f"Ruffle {st['tag']} neu installiert und geprüft.", None)
+            return self._refresh_page
+        self.run_bg(work)
+
     def update_ruffle(self) -> None:
         def work():
-            st = self.ruffle.ensure(self._wanted_ruffle_tag(), self.bg_progress, force_check=True)
+            st = self.ruffle.ensure(self._wanted_ruffle_tag(), self.bg_progress, force_check=True, pins=self._ruffle_pins())
             self.bg_progress(f"Ruffle {st['tag']} bereit.", None)
             return self._refresh_page
         self.run_bg(work)
 
     def clear_cache(self) -> None:
-        if messagebox.askyesno("Spiele neu laden", "Alle heruntergeladenen SWFs und gemerkten Hashes löschen?"):
+        q = ("Alle heruntergeladenen SWFs und gemerkten Hashes löschen?" if self.dev else
+             "Heruntergeladene Spiele löschen und beim nächsten Start neu laden?\n"
+             "(Die offiziellen Versionen bleiben festgelegt.)")
+        if messagebox.askyesno("Downloads neu laden", q):
             self.swfs.clear()
             self.set_status("Cache geleert – Spiele werden beim nächsten Start neu geladen.", None)
 
@@ -534,11 +610,15 @@ class Launcher:
         def work():
             out = json.loads(json.dumps(self.manifest))
             ruffle = self.ruffle.installed()
-            if ruffle and not out.get("ruffle_tag"):
-                out["ruffle_tag"] = ruffle["tag"]
             lines = []
+            if ruffle:
+                out["ruffle_tag"] = ruffle["tag"]
+                pins = dict(out.get("ruffle_sha256") or {})
+                pins[core.platform_id()] = core.sha256_file(Path(ruffle["exe"]))
+                out["ruffle_sha256"] = pins
+                lines.append(f"Ruffle {ruffle['tag']} ({core.platform_id()}): {pins[core.platform_id()]}")
             for g in out["games"]:
-                p = self.swfs.ensure(g, self.bg_progress)[0]
+                p = self.swfs.fetch_raw(g, self.bg_progress)
                 h = core.sha256_file(p)
                 g["sha256"] = h
                 lines.append(f"{g['id']}: {h}")

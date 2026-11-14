@@ -60,7 +60,7 @@ assert rm.ensure(None, lambda t,f:None)["tag"]=="nightly-2026-11-10"
 print("ruffle install ok:", st["exe"].replace(tmp,"~"))
 
 # --- 4. SWF: TOFU, Manipulation, gepinnter Hash, Nicht-SWF
-sm=core.SwfManager(root)
+sm=core.SwfManager(root, strict=False)
 g={"id":"lt1","title":"Lucky Tower","url":base+"/lt1.swf","sha256":None}
 p,h,v=sm.ensure(g,lambda t,f:None); assert v.startswith("nicht gepinnt"), v
 p,h2,v=sm.ensure(g,lambda t,f:None); assert v=="wie erster Download" and h2==h
@@ -106,7 +106,9 @@ for gm in mf["games"]: gm.update(url=base+"/lt1.swf", sha256=None, file=None)
 mf["games"][2]["url"]=base+"/missing.swf"; mf["ruffle_tag"]=None
 (root/"games.json").write_text(json.dumps(mf))
 for f in (root/"games").glob("*"): f.unlink()
+os.environ["LTL_DEV"]="1"   # bisherige Abläufe = Entwicklermodus (ungepinnte Test-Dateien)
 r=tk.Tk(); app=launcher.Launcher(r); sys.excepthook=sys.__excepthook__
+assert app.dev
 assert app.manifest_src.endswith("games.json")
 def pump(sec=3):
     end=time.time()+sec
@@ -189,5 +191,87 @@ repo=pathlib.Path(tmp,"repo"); shutil.copytree(HERE.parent, repo, ignore=shutil.
 out=subprocess.run([sys.executable,str(repo/"pin_hashes.py")],capture_output=True,text=True,cwd=repo); assert out.returncode==0, out.stderr
 gj=json.loads((repo/"games.json").read_text()); assert {g["id"]:g["sha256"] for g in gj["games"]}["lt2_qms"]==h
 print("pin_hashes ok")
+
+# --- 9. OFFIZIELLER MODUS: keine Umgehung der festgelegten Versionen
+os.environ.pop("LTL_DEV")
+good=b"CWS\x0a"+b"official"*100; bad=b"CWS\x0a"+b"modded!!"*100
+(srv/"official.swf").write_bytes(good); (srv/"modded.swf").write_bytes(bad)
+import hashlib
+H=lambda b: hashlib.sha256(b).hexdigest()
+offd=pathlib.Path(tmp,"offapp"); offd.mkdir()
+core.app_dir=lambda: offd; core.resource_dir=lambda: offd
+official={"manifest_version":1,"ruffle_tag":"nightly-2026-11-10","games":[
+  {"id":"lt1","title":"Lucky Tower","variant":"Official","url":base+"/official.swf","sha256":H(good)},
+  {"id":"lt2_x","title":"Lucky Tower 2","variant":"X","url":base+"/official.swf","sha256":H(good)}]}
+(offd/"games.json").write_text(json.dumps(official))
+# Umgehungsversuche: eigene games.json im Datenordner, manifest_url, Ruffle-Override
+evil=json.loads(json.dumps(official)); evil["games"][0].update(url=base+"/modded.swf", sha256=H(bad))
+(root/"games.json").write_text(json.dumps(evil))
+(root/"settings.json").write_text(json.dumps({"manifest_url":base+"/evil.json","ruffle_tag_override":"nightly-hacked"}))
+for f in (root/"games").glob("*"): f.unlink()
+remote_calls=[]
+_orig_http_json=core.http_json
+def hj(url,timeout=20):
+    if url==core.OFFICIAL_MANIFEST_URL: remote_calls.append(url); raise OSError("offline")
+    if "evil" in url: raise SystemExit("manifest_url darf im offiziellen Modus nicht geladen werden")
+    return _orig_http_json(url,timeout)
+core.http_json=hj
+messagebox.log.clear()
+r2=tk.Tk(); app2=launcher.Launcher(r2); sys.excepthook=sys.__excepthook__
+assert not app2.dev and app2.manifest_src=="offiziell (eingebaut)", app2.manifest_src
+assert app2.manifest["games"][0]["sha256"]==H(good) and app2._wanted_ruffle_tag()=="nightly-2026-11-10"
+def pump2(sec=3):
+    end=time.time()+sec
+    while time.time()<end:
+        for fn in list(r2._after): r2._after.remove(fn); fn()
+        if not app2.busy and app2.q.empty(): break
+        time.sleep(0.02)
+time.sleep(0.1); pump2(); assert remote_calls, "Online-Manifest nicht geprüft"
+# offizielle Datei startet
+n=len(launched); app2.launch(app2.manifest["games"][0]); pump2()
+assert len(launched)==n+1 and not [m for m in messagebox.log if m[0]=="error"], messagebox.log
+time.sleep(0.2); pump2(1)
+# Modifizierte Datei in den Cache gelegt -> Neu-Laden-Frage -> offizielle wird geladen
+(root/"games"/"lt1.swf").write_bytes(bad)
+messagebox.answer=True; app2.launch(app2.manifest["games"][0]); pump2(); pump2(); time.sleep(0.2); pump2(1)
+assert core.sha256_file(root/"games"/"lt1.swf")==H(good)
+# "Downloads neu laden" + Quelle liefert manipulierte Datei -> abgelehnt (kein neuer Hash gemerkt)
+app2.clear_cache()
+app2.manifest["games"][0]["url"]=base+"/modded.swf"
+n=len(launched); messagebox.answer=True; app2.launch(app2.manifest["games"][0]); pump2(); pump2()
+assert len(launched)==n and "SHA-256" in messagebox.log[-1][2], messagebox.log[-1]
+# Manuelle Auswahl einer modifizierten Datei -> abgelehnt
+app2.manifest["games"][0]["url"]=base+"/gibtsnicht.swf"; (root/"games"/"lt1.swf").unlink(missing_ok=True)
+filedialog.path=str(srv/"modded.swf"); n=len(launched); app2.launch(app2.manifest["games"][0]); pump2(); pump2()
+assert len(launched)==n and messagebox.log[-1][0]=="error", messagebox.log[-1]
+# Ungepinnter Eintrag -> NotApproved
+gun=dict(app2.manifest["games"][1], sha256=None); n=len(launched); app2.launch(gun); pump2()
+assert len(launched)==n and "nicht" in messagebox.log[-1][2] and "freigegeben" in messagebox.log[-1][2], messagebox.log[-1]
+try: core.check_official(dict(official, games=[gun])); raise SystemExit("unpinned official accepted")
+except ValueError: pass
+# Einstellungen: keine Hash-Export-Funktion im offiziellen Modus
+app2.go(app2._settings_page)
+labels=[b[0] for b in app2.buttons]; assert "HASHES EXPORTIEREN" not in labels and "RUFFLE AKTUALISIEREN" not in labels, labels
+try: app2.swfs.fetch_raw(app2.manifest["games"][0], lambda t,f:None); raise SystemExit("fetch_raw in strict")
+except core.NotApproved: pass
+# Launch-Log kennzeichnet Modus
+last=json.loads((root/"launch_log.jsonl").read_text().strip().splitlines()[-1]); assert last["mode"]=="official" and last["build"]=="source"
+print("official mode ok")
+
+# --- 10. Ruffle-Fingerabdruck + GitHub-Prüfsumme
+pid=core.platform_id()
+st=rm.installed(); real=core.sha256_file(pathlib.Path(st["exe"]))
+assert rm.verify(st,{pid:real}) is True and rm.verify(st,{}) is None
+pathlib.Path(st["exe"]).write_bytes(b"#!/bin/sh\necho speedhack\n")      # Binary manipuliert
+st2=rm.ensure("nightly-2026-11-10", lambda t,f:None, pins={pid:real})     # -> automatisch neu installiert
+assert core.sha256_file(pathlib.Path(st2["exe"]))==real
+try: rm.ensure("nightly-2026-11-10", lambda t,f:None, pins={pid:"0"*64}); raise SystemExit("wrong ruffle accepted")
+except core.NotApproved: pass
+releases[1]["assets"][0]["digest"]="sha256:"+"f"*64
+try: rm.ensure("nightly-2026-11-10", lambda t,f:None, reinstall=True); raise SystemExit("digest mismatch accepted")
+except core.NotApproved as e: assert "Prüfsumme" in str(e)
+releases[1]["assets"][0]["digest"]="sha256:"+core.sha256_file(srv/"ruffle-nightly-2026_11_10-linux-x86_64.tar.gz")
+assert rm.ensure("nightly-2026-11-10", lambda t,f:None, reinstall=True, pins={pid:real})["tag"]=="nightly-2026-11-10"
+print("ruffle pin ok")
 
 print("ALLE TESTS OK")

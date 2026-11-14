@@ -36,6 +36,8 @@ APP_VERSION = "0.1.0"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://www.speedrun.com/series/Lucky_Tower_Series)"
 
 RUFFLE_REPO = "ruffle-rs/ruffle"
+# Einzige Quelle, aus der der offizielle Modus ein neueres Manifest übernimmt
+OFFICIAL_MANIFEST_URL = "https://raw.githubusercontent.com/BlwLeon/Lucky-Tower-Speedrun-Helper/main/games.json"
 LTU_STEAM_APPID = "1700270"
 
 Progress = Callable[[str, Optional[float]], None]  # (text, 0..1 oder None)
@@ -53,6 +55,9 @@ Progress = Callable[[str, Optional[float]], None]  # (text, 0..1 oder None)
 DEFAULT_MANIFEST: dict = {
     "manifest_version": 1,
     "ruffle_tag": "nightly-2026-11-14",
+    "ruffle_sha256": {
+        "windows-x86_64": "d1b8bcf513075938a27c92bac34c7625e95b5dadc2652e19f1da46397046c235"
+    },
     "games": [
         {
             "id": "lt1",
@@ -233,8 +238,42 @@ def validate_manifest(m: object) -> dict:
     return m
 
 
+class NotApproved(RuntimeError):
+    """Datei oder Ruffle-Version ist nicht offiziell freigegeben."""
+
+
+def check_official(m: dict) -> dict:
+    """Im offiziellen Modus muss jede Version per SHA-256 festgelegt sein."""
+    if not m.get("ruffle_tag"):
+        raise ValueError("Offizielles Manifest ohne festgelegte Ruffle-Version (ruffle_tag)")
+    for g in m["games"]:
+        if not g.get("sha256"):
+            raise ValueError(f"Offizielles Manifest: {g['id']} hat keinen festgelegten SHA-256")
+    pins = m.get("ruffle_sha256") or {}
+    if not isinstance(pins, dict) or any(not re.fullmatch(r"[0-9a-fA-F]{64}", str(v)) for v in pins.values()):
+        raise ValueError("Ungültiges 'ruffle_sha256'")
+    return m
+
+
+def load_official_manifest(log: Callable[[str], None] = print) -> tuple[dict, str]:
+    """Offizieller Modus: nur das mitgelieferte Manifest (in der EXE eingebaut) bzw. das Default im Code.
+    Lokale games.json-Dateien, settings.json und Overrides werden ignoriert."""
+    p = resource_dir() / "games.json"
+    if p.exists():
+        try:
+            return check_official(validate_manifest(json.loads(p.read_text("utf-8")))), "offiziell (eingebaut)"
+        except Exception as e:  # noqa: BLE001
+            log(f"Eingebautes Manifest ungültig, nutze Default: {e}")
+    return check_official(validate_manifest(json.loads(json.dumps(DEFAULT_MANIFEST)))), "offiziell (Default)"
+
+
+def fetch_remote_official(timeout: float = 6) -> dict:
+    """Neueres Manifest aus dem offiziellen Repo (nur gültig, wenn vollständig gepinnt)."""
+    return check_official(validate_manifest(http_json(OFFICIAL_MANIFEST_URL, timeout=timeout)))
+
+
 def load_manifest(root: Path, settings: Settings, log: Callable[[str], None] = print) -> tuple[dict, str]:
-    """Reihenfolge: manifest_url (remote, wird gecacht) > games.json neben der EXE
+    """NUR Entwicklermodus. Reihenfolge: manifest_url (remote, wird gecacht) > games.json neben der EXE
     > games.json im Datenordner > eingebautes Default-Manifest."""
     cache = root / "manifest_cache.json"
     if settings.manifest_url:
@@ -322,6 +361,11 @@ def pick_ruffle_asset(assets: list[dict], osname: str, arch: str) -> Optional[di
     return best
 
 
+def platform_id() -> str:
+    o, a = platform_key()
+    return f"{o}-{a}"
+
+
 def find_ruffle_release(tag: Optional[str], osname: str, arch: str) -> tuple[str, dict]:
     if tag:
         rel = http_json(f"https://api.github.com/repos/{RUFFLE_REPO}/releases/tags/{tag}")
@@ -402,24 +446,42 @@ class RuffleManager:
             pass
         return None
 
-    def ensure(self, wanted_tag: Optional[str], progress: Progress, force_check: bool = False) -> dict:
+    def verify(self, st: dict, pins: Optional[dict]) -> Optional[bool]:
+        """True/False wenn für diese Plattform ein Fingerabdruck festgelegt ist, sonst None."""
+        pin = (pins or {}).get(platform_id())
+        if not pin:
+            return None
+        try:
+            return sha256_file(Path(st["exe"])) == pin.lower()
+        except OSError:
+            return False
+
+    def ensure(self, wanted_tag: Optional[str], progress: Progress, force_check: bool = False,
+               pins: Optional[dict] = None, reinstall: bool = False) -> dict:
         """Stellt sicher, dass Ruffle installiert ist.
-        - Gepinnter Tag: genau diese Version.
-        - Kein Tag: vorhandene Version reicht; force_check sucht nach Updates."""
+        - Gepinnter Tag: genau diese Version (bei pins zusätzlich per SHA-256 der Binary geprüft).
+        - Kein Tag (nur Entwicklermodus): vorhandene Version reicht; force_check sucht nach Updates."""
         cur = self.installed()
-        if cur and wanted_tag and cur["tag"] == wanted_tag:
-            return cur
-        if cur and not wanted_tag and not force_check:
-            return cur
+        if cur and not reinstall:
+            if wanted_tag and cur["tag"] == wanted_tag:
+                ok = self.verify(cur, pins)
+                if ok is not False:
+                    return cur
+                progress("Ruffle wurde verändert – wird neu installiert …", None)
+            elif not wanted_tag and not force_check:
+                return cur
         osname, arch = platform_key()
         progress("Suche Ruffle-Release auf GitHub …", None)
         tag, asset = find_ruffle_release(wanted_tag, osname, arch)
-        if cur and cur["tag"] == tag:
+        if cur and cur["tag"] == tag and not reinstall and self.verify(cur, pins) is not False:
             progress(f"Ruffle {tag} ist aktuell.", 1.0)
             return cur
         with tempfile.TemporaryDirectory(prefix="ltl_") as td:
             arc = Path(td) / asset["name"]
             http_download(asset["browser_download_url"], arc, progress, f"Ruffle {tag}")
+            digest = str(asset.get("digest") or "")
+            if digest.startswith("sha256:") and sha256_file(arc) != digest[7:].lower():
+                raise NotApproved("Ruffle-Download stimmt nicht mit der Prüfsumme von GitHub überein.")
             progress("Entpacke Ruffle …", None)
             dest = self.root / re.sub(r"[^A-Za-z0-9._-]", "_", tag)
             if dest.exists():
@@ -431,6 +493,8 @@ class RuffleManager:
         if not sys.platform.startswith("win"):
             exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         st = {"tag": tag, "asset": asset["name"], "exe": str(exe), "installed_at": int(time.time())}
+        if self.verify(st, pins) is False:
+            raise NotApproved(f"Ruffle {tag} ({platform_id()}) entspricht nicht dem offiziellen Fingerabdruck.")
         self.state_file.write_text(json.dumps(st, indent=2), "utf-8")
         # Alte Versionen aufräumen
         for d in self.root.iterdir():
@@ -448,7 +512,10 @@ class HashMismatch(Exception):
 
 
 class SwfManager:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, strict: bool = True):
+        """strict=True (offizieller Modus): Es zählen ausschließlich die Hashes aus dem Manifest.
+        strict=False (Entwicklermodus): ungepinnte Dateien werden beim ersten Laden gemerkt."""
+        self.strict = strict
         self.root = root / "games"
         self.root.mkdir(parents=True, exist_ok=True)
         self.tofu_file = self.root / "known_hashes.json"
@@ -488,7 +555,7 @@ class SwfManager:
         """(hash, quelle) – quelle ist 'manifest', 'erster Download' oder 'keiner'."""
         if game.get("sha256"):
             return game["sha256"].lower(), "manifest"
-        if self.bundled_path(game):
+        if self.strict or self.bundled_path(game):
             # Mitgelieferte Dateien werden nur über games.json gepinnt (pin_hashes.py)
             return None, "keiner"
         known = self._tofu().get(game["id"])
@@ -533,12 +600,34 @@ class SwfManager:
             raise RuntimeError(f"{what} ist keine gültige SWF ({size} Bytes) – "
                                "vermutlich unvollständig heruntergeladen. Bitte ersetzen.")
 
+    def fetch_raw(self, game: dict, progress: Progress) -> Path:
+        """NUR Entwicklermodus (Hash-Export): Datei holen, ohne gegen einen Hash zu prüfen."""
+        if self.strict:
+            raise NotApproved("Nur im Entwicklermodus verfügbar.")
+        bundled = self.bundled_path(game)
+        if bundled:
+            self._require_swf(bundled, f"Mitgelieferte Datei {game.get('file')}")
+            return bundled
+        p = self.path_for(game)
+        if game.get("url"):
+            tmp = p.with_name(p.name + ".new")
+            try:
+                http_download(game["url"], tmp, progress, f"{game['title']} {game.get('variant', '')}".strip())
+                os.replace(tmp, p)
+            except Exception:  # noqa: BLE001 – Quelle offline: vorhandene (z. B. manuell gewählte) Datei nutzen
+                if not p.exists():
+                    raise
+        self._require_swf(p, f"Datei {p.name}")
+        return p
+
     def import_local(self, game: dict, src: Path) -> tuple[Path, str, str]:
         """Manuell gewählte SWF übernehmen (z. B. wenn die Quelle offline ist).
         Wird nur akzeptiert, wenn sie zum Hash passt (falls einer bekannt ist)."""
         if not is_swf(src):
             raise RuntimeError("Die gewählte Datei ist keine SWF.")
         exp, src_kind = self.expected_hash(game)
+        if exp is None and self.strict:
+            raise NotApproved(f"{game['title']} {game.get('variant', '')}: keine offiziell freigegebene Version hinterlegt.")
         h = sha256_file(src)
         if exp and h != exp:
             raise HashMismatch(f"Datei passt nicht zur offiziellen Version ({src_kind}).\n"
@@ -549,6 +638,9 @@ class SwfManager:
     def _verify(self, game: dict, p: Path) -> tuple[Path, str, str]:
         h = sha256_file(p)
         exp, src = self.expected_hash(game)
+        if exp is None and self.strict:
+            raise NotApproved(f"{game['title']} {game.get('variant', '')}: keine offiziell freigegebene Version "
+                              "hinterlegt – Start nicht erlaubt.")
         if exp is None and self.bundled_path(game) == p:
             return p, h, "mitgeliefert, nicht gepinnt"
         if exp is None:
@@ -564,9 +656,11 @@ class SwfManager:
         return p, h, "verifiziert" if src == "manifest" else "wie erster Download"
 
     def clear(self) -> None:
+        """Löscht nur heruntergeladene Dateien. Festgelegte Hashes bleiben davon unberührt."""
         for f in self.root.glob("*.swf"):
             f.unlink(missing_ok=True)
-        self.tofu_file.unlink(missing_ok=True)
+        if not self.strict:
+            self.tofu_file.unlink(missing_ok=True)
 
 
 # --------------------------------------------------------------------------

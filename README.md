@@ -22,7 +22,9 @@ and the Flash games run in a fixed version of [Ruffle](https://github.com/ruffle
 ## Features
 
 - **Hash-locked versions**: The SHA-256 of every approved SWF is pinned in [`games.json`](games.json). Files that do not match are refused.
-- **Pinned Ruffle**: The Ruffle desktop build named in `games.json` (`ruffle_tag`) is downloaded automatically from GitHub, so every runner uses the same emulator version.
+  Unpinned files are refused too. Players cannot add, re-pin or override versions (see [Official vs. developer mode](#official-vs-developer-mode)).
+- **Pinned Ruffle**: The Ruffle build named in `games.json` (`ruffle_tag`) is downloaded from GitHub and checked against GitHub's checksum.
+  The executable is also verified against `ruffle_sha256` before every launch. A modified Ruffle is reinstalled automatically.
 - **Steam detection** for Lucky Tower Ultimate across all Steam library folders. If the game is not installed, the launcher opens the store page.
 - **Launch log** (`launch_log.jsonl`): Each start records time, game, hash and Ruffle version, so moderators have something to check during verification.
 - **Status bar**: Shows whether the game is running and the session time, and reports Ruffle errors with Ruffle's own output.
@@ -48,6 +50,18 @@ python launcher.py
 
 Both scripts use PyInstaller and bundle `swf/` and `games.json` into the executable.
 
+## Official vs. developer mode
+
+**Official mode (default)** is what runners use.
+- Only the `games.json` built into the launcher counts. A newer one is accepted only from this repository's `main` branch, and only if every version in it is pinned.
+- `games.json` files placed elsewhere, `settings.json` overrides, unpinned files and modified Ruffle builds are all ignored or refused.
+- The settings page has no tools that change hashes.
+
+**Developer mode** is for moderators only. Start it with `python launcher.py --dev` (or `LTL_DEV=1`).
+- A red banner shows that it is not valid for runs.
+- It enables **Hashes exportieren**, Ruffle updates, local `games.json` files and `manifest_url`.
+- Every start is recorded in `launch_log.jsonl` with `"mode"` and `"build"` (`exe` or `source`), so runs from developer mode or a modified source checkout are easy to spot.
+
 ## For moderators
 
 ### Approving a new or changed SWF
@@ -56,14 +70,14 @@ Both scripts use PyInstaller and bundle `swf/` and `games.json` into the executa
 2. Run `python pin_hashes.py`. It writes the new SHA-256 values into `games.json`.
 3. Commit `swf/` and `games.json`, then build a new release.
 
-For downloaded games (Lucky Tower 1), use **Einstellungen → Hashes exportieren** in the launcher. It downloads everything, hashes it and writes `games_pinned.json`, including the current Ruffle version.
+For downloaded games (Lucky Tower 1) and new Ruffle versions, start the launcher in **developer mode** and use **Einstellungen → Hashes exportieren**.
+It writes `games_pinned.json` with all SWF hashes, the Ruffle version and the Ruffle executable's hash for your platform. Copy the values into `games.json`.
 
-### Updating without a new build
+### Rolling out changes without a new build
 
-Set `"manifest_url"` in `settings.json` (in the data folder) to the raw URL of `games.json` in this repository.
-The launcher then loads the current manifest on every start.
-
-Manifest lookup order: `manifest_url` → `games.json` next to the EXE → bundled `games.json` → data folder → built-in default.
+Merge the updated `games.json` into `main`. Official launchers load it from
+`https://raw.githubusercontent.com/BlwLeon/Lucky-Tower-Speedrun-Helper/main/games.json` on start, as long as it is complete (every game and Ruffle pinned).
+New *bundled* SWFs still need a new build.
 
 ### Manifest format
 
@@ -71,6 +85,7 @@ Manifest lookup order: `manifest_url` → `games.json` next to the EXE → bundl
 {
   "manifest_version": 1,
   "ruffle_tag": "nightly-2026-11-14",
+  "ruffle_sha256": { "windows-x86_64": "d1b8bcf5…" },
   "games": [
     {
       "id": "lt2_glitchless",
@@ -91,6 +106,7 @@ Manifest lookup order: `manifest_url` → `games.json` next to the EXE → bundl
 - `url`: download source, used only if `file` is missing. At least one of `file` and `url` must be set.
 - Entries with the same `title` are grouped on one page, one button each.
 - `ruffle_args` are passed to Ruffle, for example to enforce rendering settings for runs.
+- `ruffle_sha256`: hash of the Ruffle executable per platform (`windows-x86_64`, `macos-arm64`, `linux-x86_64`, …). Platforms without an entry still run, and the launch log marks them as unverified.
 
 ## Data folder
 
@@ -112,7 +128,8 @@ This end-to-end test runs on Linux and macOS. It uses a local HTTP server and a 
 
 ## Limitations
 
-The hash check makes sure runners start the approved files through the official launcher. It is not tamper-proof against someone who modifies the launcher itself. It complements video verification and does not replace it.
+The hash check makes sure runners start the approved files through the official launcher. It is not tamper-proof against someone who modifies the launcher itself.
+Running from source is possible, but the launch log records it (`"build": "source"`), so moderators can require the official EXE for runs. It complements video verification and does not replace it.
 
 ## Credits & license
 

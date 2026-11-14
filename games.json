@@ -1,6 +1,9 @@
 {
   "manifest_version": 1,
   "ruffle_tag": "nightly-2026-11-14",
+  "ruffle_sha256": {
+    "windows-x86_64": "d1b8bcf513075938a27c92bac34c7625e95b5dadc2652e19f1da46397046c235"
+  },
   "games": [
     {
       "id": "lt1",
