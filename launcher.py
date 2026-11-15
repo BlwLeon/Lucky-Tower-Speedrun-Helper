@@ -32,6 +32,7 @@ STONE, STONE_DARK, STONE_EDGE = "#7b7c84", "#5f6068", "#34353b"
 ROOF, ROOF_EDGE = "#8f2f2f", "#4d1717"
 BTN, BTN_HOVER, BTN_EDGE = "#5b3b22", "#7c5330", "#2c1b0e"
 BTN_DISABLED = "#6d6158"
+BTN_PRACTICE, BTN_PRACTICE_HOVER, BTN_PRACTICE_LINE = "#2d5f6e", "#3d7d91", "#4a7f8f"
 CREAM = "#f6ecd2"
 INK = "#2c1b0e"
 BAR = "#3b2614"
@@ -346,20 +347,22 @@ class Launcher:
         bw = 290
         bh, gap = (40, 10) if n <= 4 else ((34, 6) if n == 5 else (30, 5))
         y0 = 318 if n <= 5 else 312
-        for i, (label, action, info, enabled) in enumerate(self.buttons):
+        for i, (label, action, info, enabled, *style) in enumerate(self.buttons):
+            practice = bool(style) and style[0] == "practice"
+            base, line = (BTN_PRACTICE, BTN_PRACTICE_LINE) if practice else (BTN, "#7b5636")
             y = y0 + i * (bh + gap)
             x1, x2 = W // 2 - bw // 2, W // 2 + bw // 2
             active = enabled and not self.busy
             tag = f"btn{i}"
-            body = self._round_rect(x1, y, x2, y + bh, 14, fill=BTN if active else BTN_DISABLED,
+            body = self._round_rect(x1, y, x2, y + bh, 14, fill=base if active else BTN_DISABLED,
                                     outline=BTN_EDGE, width=3, tags=("ui", tag))
-            cv.create_line(x1 + 14, y + 6, x2 - 14, y + 6, fill="#7b5636" if active else "#7f746b",
+            cv.create_line(x1 + 14, y + 6, x2 - 14, y + 6, fill=line if active else "#7f746b",
                            width=2, tags=("ui", tag))
             txt = cv.create_text(W // 2, y + bh // 2 + 1, text=label, font=self.f_btn,
                                  fill=CREAM if active else "#c9bfae", tags=("ui", tag))
             if active:
-                cv.tag_bind(tag, "<Enter>", lambda e, b=body, inf=info: self._hover(b, True, inf))
-                cv.tag_bind(tag, "<Leave>", lambda e, b=body: self._hover(b, False, ""))
+                cv.tag_bind(tag, "<Enter>", lambda e, b=body, inf=info, p=practice: self._hover(b, True, inf, p))
+                cv.tag_bind(tag, "<Leave>", lambda e, b=body, p=practice: self._hover(b, False, "", p))
                 cv.tag_bind(tag, "<Button-1>", lambda e, a=action, lb=label: (self.trail(f"Click: {lb}"), a()))
             else:
                 for ev in ("<Enter>", "<Leave>", "<Button-1>"):
@@ -370,8 +373,11 @@ class Launcher:
         self.info_id = cv.create_text(W // 2, H - 56, text="", font=self.f_small, fill=INK,
                                       tags=("ui",), width=W - 120, justify="center")
 
-    def _hover(self, body, on: bool, info: str) -> None:
-        self.cv.itemconfigure(body, fill=BTN_HOVER if on else BTN)
+    def _hover(self, body, on: bool, info: str, practice: bool = False) -> None:
+        if practice:
+            self.cv.itemconfigure(body, fill=BTN_PRACTICE_HOVER if on else BTN_PRACTICE)
+        else:
+            self.cv.itemconfigure(body, fill=BTN_HOVER if on else BTN)
         self.cv.configure(cursor="hand2" if on else "")
         self.cv.itemconfigure(self.info_id, text=info if on else "")
         self.cv.itemconfigure(self.info_bg, state="normal" if (on and info) else "hidden")
@@ -400,10 +406,15 @@ class Launcher:
         for title, games in self._groups().items():
             info = _("{n} official version(s): {list}", n=len(games),
                      list=", ".join(g.get("variant") or _("Standard") for g in games))
+            if self._practice_for(title):
+                info += "  ·  " + _("+ practice version")
             btns.append((title.upper(), lambda t=title: self.go(lambda: self._game_page(t)), info, True))
         btns.append(("LUCKY TOWER ULTIMATE", lambda: self.go(self._ultimate_page), _("Steam version"), True))
         btns.append((_("SETTINGS"), lambda: self.go(self._settings_page), _("Ruffle, downloads, language"), True))
         self._set_page("", btns)
+
+    def _practice_for(self, title: str) -> list[dict]:
+        return [p for p in self.manifest.get("practice", []) if p["title"] == title]
 
     def _game_page(self, title: str) -> None:
         games = self._groups()[title]
@@ -425,6 +436,10 @@ class Launcher:
             quelle = g.get("file") if st.get("bundled") else (g.get("url") or g.get("file"))
             info = f"{g.get('variant') or title}  ·  {cached}  ·  {ver}\n" + _("Source: {src}", src=quelle)
             btns.append((_(g.get("label") or "PLAY"), lambda g=g: self.launch(g), info, True))
+        for p in self._practice_for(title):
+            info = _("Practice version with room warps and QoL features – NOT valid for runs") + "\n" + \
+                _("Source: {src}", src=p.get("file") or p.get("url"))
+            btns.append((_(p.get("label") or "PRACTICE"), lambda p=p: self.launch(p), info, True, "practice"))
         btns.append((_("BACK"), self.back, "", True))
         self._set_page(title.upper(), btns)
 
@@ -520,6 +535,17 @@ class Launcher:
 
     def launch(self, game: dict) -> None:
         name = f"{game['title']} – {game.get('variant') or _('Standard')}"
+        practice = bool(game.get("practice"))
+        if practice:
+            self.trail(f"Practice warning shown: {game['id']}")
+            if not messagebox.askokcancel(
+                    _("Practice version"),
+                    _("{name} is a PRACTICE version with room warps and QoL features.\n\n"
+                      "It is for practicing only. Runs played on this version are INVALID "
+                      "and will be rejected on the leaderboard.\n\nStart the practice version?", name=name),
+                    icon="warning"):
+                self.trail(f"Practice start cancelled: {game['id']}")
+                return
 
         def work(redownload: bool = False, local: Optional[Path] = None):
             rs = self._ruffle_ready()
@@ -548,9 +574,13 @@ class Launcher:
                 "sha256": h, "verification": ver, "ruffle": rs["tag"],
                 "ruffle_verification": rs.get("verification", "ok"),
                 "mode": "dev" if self.dev else "official",
+                "practice": practice,
                 "build": "exe" if getattr(sys, "frozen", False) else "source",
                 "manifest": self.manifest_src})
-            self._watch(proc, name, f"SHA-256 {h[:12]}… ({_(ver)})  ·  Ruffle {rs['tag']}", log_path)
+            detail = f"SHA-256 {h[:12]}… ({_(ver)})  ·  Ruffle {rs['tag']}"
+            if practice:
+                detail = _("PRACTICE – not valid for runs") + "  ·  " + detail
+            self._watch(proc, name, detail, log_path)
             return self._refresh_page
 
         self.run_bg(work)
@@ -642,7 +672,8 @@ class Launcher:
                 pins[core.platform_id()] = core.sha256_file(Path(ruffle["exe"]))
                 out["ruffle_sha256"] = pins
                 lines.append(f"Ruffle {ruffle['tag']} ({core.platform_id()}): {pins[core.platform_id()]}")
-            for g in out["games"]:
+            for g in out["games"] + out.get("practice", []):
+                g.pop("practice", None)
                 p = self.swfs.fetch_raw(g, self.bg_progress)
                 h = core.sha256_file(p)
                 g["sha256"] = h

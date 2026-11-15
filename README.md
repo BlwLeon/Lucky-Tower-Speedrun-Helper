@@ -28,6 +28,11 @@ Version 1.0 officially supports **Windows (64-bit)** only. That is the only plat
 | Lucky Tower 2 – Glitch (QMS) | Community patch `swf/lt2_qms.swf` (bundled) | Ruffle |
 | Lucky Tower 2 – Glitchless | Unpatched original from Flashpoint `swf/lt2_glitchless.swf` (bundled) | Ruffle |
 | Lucky Tower Ultimate | Your Steam installation (App 1700270) | Steam |
+| Lucky Tower – **Practice** | Practice build with debug bar `swf/lt1_practice.swf` (bundled) | Ruffle |
+| Lucky Tower 2 – **Practice** | Practice build `swf/lt2_practice.swf` (bundled) | Ruffle |
+
+> **Practice versions are for practicing only.** They let you warp to any room to practice strats, along with other QoL features.
+> **Runs played on a practice version are invalid.** The launcher shows a warning before every practice start, and the launch log marks these starts with `"practice": true`.
 
 ## Features
 
@@ -38,6 +43,7 @@ Version 1.0 officially supports **Windows (64-bit)** only. That is the only plat
 - **Steam detection** for Lucky Tower Ultimate across all Steam library folders. If the game is not installed, the launcher opens the store page.
 - **Launch log** (`launch_log.jsonl`): Each start records time, game, hash and Ruffle version, so moderators have something to check during verification.
 - **Status bar**: Shows whether the game is running and the session time, and reports Ruffle errors with Ruffle's own output.
+- **Practice versions** for Lucky Tower 1 & 2 (room warps, QoL). Separate blue button, warning before every start, marked in the launch log.
 - **English / German interface**, switchable in the settings (the choice is remembered).
 - **Diagnostics**: Errors are written to `crash.log`, clicks to `session.log`. If the UI freezes for more than 10 s, a thread dump goes to `crash_native.log`.
 - Uses only the Python standard library.
@@ -129,6 +135,8 @@ New *bundled* SWFs still need a new build.
 - Entries with the same `title` are grouped on one page, one button each.
 - `ruffle_args` are passed to Ruffle, for example to enforce rendering settings for runs.
 - `ruffle_sha256`: hash of the Ruffle executable per platform (`windows-x86_64`, `macos-arm64`, `linux-x86_64`, …). Platforms without an entry still run, and the launch log marks them as unverified.
+- `practice`: an optional, separate list of practice versions, using the same fields as `games`. They appear as a blue **PRACTICE** button on the page of the game with the same `title`.
+  A pinned `sha256` is optional for these. `pin_hashes.py` pins them automatically, which catches broken files. They are kept separate from `games` so that launchers up to 1.0.1, which read the online manifest, ignore them.
 - `ruffle_mirror`: fallback download per platform, used if the pinned Ruffle release is no longer available on GitHub. It is used only when `ruffle_sha256` is pinned for that platform, so the binary is still verified.
 
 ## Data folder

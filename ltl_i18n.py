@@ -163,6 +163,21 @@ DE: dict[str, str] = {
     "Unsafe entry in archive: {name}": "Unsicherer Eintrag im Archiv: {name}",
     "Unknown archive format: {name}": "Unbekanntes Archivformat: {name}",
 
+    # ---- practice (1.1.0)
+    "PRACTICE": "PRACTICE",
+    "+ practice version": "+ Practice-Version",
+    "Practice version with room warps and QoL features – NOT valid for runs":
+        "Practice-Version mit Raum-Warps und QoL-Features – NICHT für Runs zugelassen",
+    "Practice version": "Practice-Version",
+    "{name} is a PRACTICE version with room warps and QoL features.\n\n"
+    "It is for practicing only. Runs played on this version are INVALID "
+    "and will be rejected on the leaderboard.\n\nStart the practice version?":
+        "{name} ist eine PRACTICE-Version mit Raum-Warps und QoL-Features.\n\n"
+        "Sie ist nur zum Üben gedacht. Runs auf dieser Version sind UNGÜLTIG "
+        "und werden auf dem Leaderboard abgelehnt.\n\nPractice-Version starten?",
+    "PRACTICE – not valid for runs": "PRACTICE – nicht für Runs zugelassen",
+    "practice": "Practice",
+
     # ---- verification codes (shown in status bar)
     "verified": "verifiziert",
     "same as first download": "wie erster Download",
