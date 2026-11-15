@@ -103,7 +103,7 @@ def fake_launch(exe,swf,args,log_path=None):
 core.launch_swf=fake_launch
 mf=json.loads(json.dumps(core.DEFAULT_MANIFEST))
 for gm in mf["games"]: gm.update(url=base+"/lt1.swf", sha256=None, file=None)
-mf["games"][2]["url"]=base+"/missing.swf"; mf["ruffle_tag"]=None
+mf["games"][2]["url"]=base+"/missing.swf"; mf["ruffle_tag"]=None; mf["practice"]=[]
 (root/"games.json").write_text(json.dumps(mf))
 for f in (root/"games").glob("*"): f.unlink()
 os.environ["LTL_DEV"]="1"   # bisherige Abläufe = Entwicklermodus (ungepinnte Test-Dateien)
@@ -283,6 +283,55 @@ for en,de in ltl_i18n.DE.items():
     f=lambda t: sorted({x[1] for x in string.Formatter().parse(t) if x[1]})
     assert f(en)==f(de), (en,de)
 print("language ok")
+
+# --- 9c. PRACTICE-Versionen (1.1.0)
+pr_good=b"CWS\x0a"+b"practice"*100
+(offd/"swf").mkdir(exist_ok=True); (offd/"swf"/"lt2_practice.swf").write_bytes(pr_good)
+off_pr=json.loads(json.dumps(official))
+off_pr["practice"]=[{"id":"lt2_practice","title":"Lucky Tower 2","variant":"Practice","label":"PRACTICE",
+                     "file":"swf/lt2_practice.swf","url":None,"sha256":None}]
+(offd/"games.json").write_text(json.dumps(off_pr))
+messagebox.log.clear()
+r4=tk.Tk(); app4=launcher.Launcher(r4); sys.excepthook=sys.__excepthook__
+def pump4(sec=3):
+    end=time.time()+sec
+    while time.time()<end:
+        for fn in list(r4._after): r4._after.remove(fn); fn()
+        if not app4.busy and app4.q.empty(): break
+        time.sleep(0.02)
+assert [g["id"] for g in app4.manifest["games"]]==["lt1","lt2_x"]  # practice nicht unter den offiziellen
+assert "practice" in [b[2] for b in app4.buttons if b[0]=="LUCKY TOWER 2"][0]
+app4.go(lambda: app4._game_page("Lucky Tower 2"))
+btn=[b for b in app4.buttons if b[0]=="PRACTICE"]; assert btn and btn[0][4]=="practice" and "NOT valid for runs" in btn[0][2], app4.buttons
+assert app4.buttons[-1][0]=="BACK" and app4.buttons[-2][0]=="PRACTICE"
+# Warnung -> Abbrechen: kein Start
+messagebox.answer=False; n=len(launched); app4.launch(btn[0][1].__defaults__[0] if btn[0][1].__defaults__ else app4.manifest["practice"][0]); pump4()
+assert len(launched)==n and messagebox.log[-1][0]=="okcancel" and "INVALID" in messagebox.log[-1][2], messagebox.log[-1]
+# Warnung -> OK: Start, ungepinnt erlaubt, Log + Status markiert
+messagebox.answer=True; app4.launch(app4.manifest["practice"][0]); pump4()
+assert len(launched)==n+1 and launched[-1][1].endswith("lt2_practice.swf"), launched[-1]
+assert "PRACTICE – not valid for runs" in app4.status_text, app4.status_text
+last=json.loads((root/"launch_log.jsonl").read_text().strip().splitlines()[-1])
+assert last["practice"] is True and last["game"]=="lt2_practice" and last["verification"]=="practice", last
+time.sleep(0.2); pump4(1)
+# Offizielle Starts sind als practice=false geloggt
+app4.launch(app4.manifest["games"][0]); pump4(); time.sleep(0.2); pump4(1)
+assert json.loads((root/"launch_log.jsonl").read_text().strip().splitlines()[-1])["practice"] is False
+# Gepinnte Practice-Datei wird geprüft
+app4.manifest["practice"][0]["sha256"]="3"*64; n=len(launched); app4.launch(app4.manifest["practice"][0]); pump4()
+assert len(launched)==n and messagebox.log[-1][0]=="error", messagebox.log[-1]
+# Leere Practice-Datei -> klarer Fehler
+app4.manifest["practice"][0]["sha256"]=None; (offd/"swf"/"lt2_practice.swf").write_bytes(b"")
+app4.launch(app4.manifest["practice"][0]); pump4()
+assert "not a valid SWF (0 bytes)" in messagebox.log[-1][2], messagebox.log[-1]
+# Doppelte IDs abgelehnt; altes Manifest ohne practice-Liste weiterhin gültig
+try: core.validate_manifest({"games":[{"id":"a","title":"x","url":"u"}],"practice":[{"id":"a","title":"x","file":"f.swf"}]}); raise SystemExit("dup id")
+except ValueError: pass
+assert core.validate_manifest({"games":[{"id":"a","title":"x","url":"u"}]})["practice"]==[]
+# Deutsch
+ltl_i18n.set_language("de"); messagebox.answer=False; app4.launch(app4.manifest["practice"][0]); pump4()
+assert "UNGÜLTIG" in messagebox.log[-1][2]; ltl_i18n.set_language("en")
+print("practice ok")
 
 # --- 10. Ruffle-Fingerabdruck + GitHub-Prüfsumme
 pid=core.platform_id()

@@ -41,5 +41,29 @@
       "ruffle_args": [],
       "source_note": "Unpatched original from BlueMaxima's Flashpoint (localflash/lucky-tower-2/lucky tower 2.swf)"
     }
+  ],
+  "practice": [
+    {
+      "id": "lt1_practice",
+      "title": "Lucky Tower",
+      "variant": "Practice",
+      "label": "PRACTICE",
+      "file": "swf/lt1_practice.swf",
+      "url": null,
+      "sha256": "6a6e973e36b9ddb498583e2374f205a9f1cbda0586b19afd1c8d9efefbc73a89",
+      "ruffle_args": [],
+      "source_note": "Practice build with debug bar (room warps, QoL). Not allowed for runs."
+    },
+    {
+      "id": "lt2_practice",
+      "title": "Lucky Tower 2",
+      "variant": "Practice",
+      "label": "PRACTICE",
+      "file": "swf/lt2_practice.swf",
+      "url": null,
+      "sha256": "fdee2ca6875eceddeebd1c4bc7be05e621c68fd92760f33c44040d423838c04e",
+      "ruffle_args": [],
+      "source_note": "Practice build (room warps, QoL). Not allowed for runs."
+    }
   ]
 }

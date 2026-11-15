@@ -13,10 +13,14 @@ import ltl_core as core
 here = Path(__file__).resolve().parent
 target = here / "games.json"
 manifest = json.loads(target.read_text("utf-8")) if target.exists() else json.loads(json.dumps(core.DEFAULT_MANIFEST))
-core.validate_manifest(manifest)
+core.validate_manifest(json.loads(json.dumps(manifest)))  # Prüfung an einer Kopie (keine Zusatzfelder speichern)
+for g in manifest.get("practice", []):
+    g.pop("practice", None)
+for g in manifest["games"]:
+    g.pop("practice", None)
 
 missing = []
-for g in manifest["games"]:
+for g in manifest["games"] + manifest.get("practice", []):
     f = g.get("file")
     p = here / f if f else None
     if p and p.is_file():

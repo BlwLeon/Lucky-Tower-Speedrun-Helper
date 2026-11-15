@@ -34,7 +34,7 @@ from typing import Callable, Optional
 from ltl_i18n import _
 
 APP_NAME = "LuckyTowerLauncher"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.1.0"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://www.speedrun.com/series/Lucky_Tower_Series)"
 
 RUFFLE_REPO = "ruffle-rs/ruffle"
@@ -96,6 +96,30 @@ DEFAULT_MANIFEST: dict = {
             "sha256": "0c455e25e19056397bb29d31b4701d44da95402b74779e86885f86646454574a",
             "ruffle_args": [],
             "source_note": "Unpatched original from BlueMaxima's Flashpoint (localflash/lucky-tower-2/lucky tower 2.swf)"
+        }
+    ],
+    "practice": [
+        {
+            "id": "lt1_practice",
+            "title": "Lucky Tower",
+            "variant": "Practice",
+            "label": "PRACTICE",
+            "file": "swf/lt1_practice.swf",
+            "url": None,
+            "sha256": "6a6e973e36b9ddb498583e2374f205a9f1cbda0586b19afd1c8d9efefbc73a89",
+            "ruffle_args": [],
+            "source_note": "Practice build with debug bar (room warps, QoL). Not allowed for runs."
+        },
+        {
+            "id": "lt2_practice",
+            "title": "Lucky Tower 2",
+            "variant": "Practice",
+            "label": "PRACTICE",
+            "file": "swf/lt2_practice.swf",
+            "url": None,
+            "sha256": "fdee2ca6875eceddeebd1c4bc7be05e621c68fd92760f33c44040d423838c04e",
+            "ruffle_args": [],
+            "source_note": "Practice build (room warps, QoL). Not allowed for runs."
         }
     ]
 }
@@ -224,9 +248,25 @@ def is_swf(path: Path) -> bool:
 # Manifest
 # --------------------------------------------------------------------------
 def validate_manifest(m: object) -> dict:
+    """Prüft das Manifest. Practice-Versionen stehen in einer eigenen Liste "practice",
+    damit ältere Launcher (≤ 1.0.1), die das Online-Manifest laden, sie ignorieren."""
     if not isinstance(m, dict) or not isinstance(m.get("games"), list):
         raise ValueError("Manifest has no 'games' list")
+    practice = m.setdefault("practice", [])
+    if not isinstance(practice, list):
+        raise ValueError("'practice' must be a list")
+    for g in practice:
+        if isinstance(g, dict):
+            g["practice"] = True
+            g.setdefault("variant", "Practice")
+            g.setdefault("label", "PRACTICE")
     for g in m["games"]:
+        if isinstance(g, dict):
+            g["practice"] = False
+    seen: set[str] = set()
+    for g in m["games"] + practice:
+        if not isinstance(g, dict):
+            raise ValueError(f"Invalid manifest entry: {g!r}")
         for key in ("id", "title"):
             if not isinstance(g.get(key), str) or not g[key]:
                 raise ValueError(f"Manifest entry without '{key}': {g!r}")
@@ -241,8 +281,11 @@ def validate_manifest(m: object) -> dict:
         if sha is not None and not re.fullmatch(r"[0-9a-fA-F]{64}", str(sha)):
             raise ValueError(f"Invalid SHA-256 for {g['id']}")
         g.setdefault("variant", "")
-        g.setdefault("label", g["variant"].upper() or "SPIELEN")
+        g.setdefault("label", g["variant"].upper() or "PLAY")
         g.setdefault("ruffle_args", [])
+        if g["id"] in seen:
+            raise ValueError(f"Duplicate game id: {g['id']!r}")
+        seen.add(g["id"])
     return m
 
 
@@ -254,7 +297,7 @@ def check_official(m: dict) -> dict:
     """Im offiziellen Modus muss jede Version per SHA-256 festgelegt sein."""
     if not m.get("ruffle_tag"):
         raise ValueError("Official manifest without pinned Ruffle version (ruffle_tag)")
-    for g in m["games"]:
+    for g in m["games"]:  # Practice-Versionen dürfen ungepinnt sein (nicht für Runs zugelassen)
         if not g.get("sha256"):
             raise ValueError(f"Official manifest: {g['id']} has no pinned SHA-256")
     pins = m.get("ruffle_sha256") or {}
@@ -662,6 +705,8 @@ class SwfManager:
     def _verify(self, game: dict, p: Path) -> tuple[Path, str, str]:
         h = sha256_file(p)
         exp, src = self.expected_hash(game)
+        if exp is None and game.get("practice"):
+            return p, h, "practice"
         if exp is None and self.strict:
             raise NotApproved(_("{game}: no officially approved version on record – launch not allowed.",
                                 game=_game_name(game)))
