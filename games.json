@@ -78,6 +78,16 @@
       "file": "mods/LTUSpeedrunMod.dll",
       "sha256": "e2e73fb6a46fd44eca7e4f92c6498fa57f2b54cb94e9c9ef3bf7c9a88d83318a",
       "source": "https://github.com/MadMouse101/LTUSpeedrunMod"
-    }
+    },
+    "plugins": [
+      {
+        "name": "ConfigurationManager",
+        "version": "18.4.1",
+        "url": "https://github.com/BepInEx/BepInEx.ConfigurationManager/releases/download/v18.4.1/BepInEx.ConfigurationManager_BepInEx5_v18.4.1.zip",
+        "sha256": "9eb19791508a2acb973dfb2bcd196c631fb53cf041c462d69d889e515115aa53",
+        "check": "BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll",
+        "source": "https://github.com/BepInEx/BepInEx.ConfigurationManager"
+      }
+    ]
   }
 }

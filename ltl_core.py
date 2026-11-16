@@ -35,7 +35,7 @@ from typing import Callable, Optional
 from ltl_i18n import _
 
 APP_NAME = "LuckyTowerLauncher"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://www.speedrun.com/series/Lucky_Tower_Series)"
 
 RUFFLE_REPO = "ruffle-rs/ruffle"
@@ -135,7 +135,17 @@ DEFAULT_MANIFEST: dict = {
             "file": "mods/LTUSpeedrunMod.dll",
             "sha256": "e2e73fb6a46fd44eca7e4f92c6498fa57f2b54cb94e9c9ef3bf7c9a88d83318a",
             "source": "https://github.com/MadMouse101/LTUSpeedrunMod"
-        }
+        },
+        "plugins": [
+            {
+                "name": "ConfigurationManager",
+                "version": "18.4.1",
+                "url": "https://github.com/BepInEx/BepInEx.ConfigurationManager/releases/download/v18.4.1/BepInEx.ConfigurationManager_BepInEx5_v18.4.1.zip",
+                "sha256": "9eb19791508a2acb973dfb2bcd196c631fb53cf041c462d69d889e515115aa53",
+                "check": "BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll",
+                "source": "https://github.com/BepInEx/BepInEx.ConfigurationManager"
+            }
+        ]
     }
 }
 
@@ -860,7 +870,11 @@ def open_steam_store(appid: str = LTU_STEAM_APPID) -> None:
 # Manifest-Abschnitt "ltu_mod" (getrennt von "games", ältere Launcher ignorieren ihn):
 #   "ltu_mod": {
 #     "bepinex": {"version": "5.4.23.5", "url": "...BepInEx_win_x64_5.4.23.5.zip", "sha256": "..."},
-#     "mod": {"name": "LTU Speedrun Mod", "version": "1.0.1", "file": "mods/LTUSpeedrunMod.dll", "sha256": "..."}
+#     "mod": {"name": "LTU Speedrun Mod", "version": "1.0.1", "file": "mods/LTUSpeedrunMod.dll", "sha256": "..."},
+#     "plugins": [  # zusätzliche BepInEx-Plugins (Zip mit BepInEx/plugins/... wird in den Spielordner entpackt)
+#       {"name": "ConfigurationManager", "version": "18.4.1", "url": "...zip", "sha256": "...",
+#        "check": "BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll"}
+#     ]
 #   }
 MOD_DLL_NAME = "LTUSpeedrunMod.dll"
 
@@ -879,6 +893,19 @@ def validate_ltu_mod(mod: object) -> dict:
     for part, name in ((bep, "bepinex"), (dll, "mod")):
         if not re.fullmatch(r"[0-9a-fA-F]{64}", str(part.get("sha256") or "")):
             raise ValueError(f"'ltu_mod.{name}.sha256' must be pinned")
+    plugins = mod.setdefault("plugins", [])
+    if not isinstance(plugins, list):
+        raise ValueError("'ltu_mod.plugins' must be a list")
+    for p in plugins:
+        if not isinstance(p, dict) or not p.get("name"):
+            raise ValueError("'ltu_mod.plugins' entries need a 'name'")
+        if not str(p.get("url", "")).startswith("https://"):
+            raise ValueError(f"'ltu_mod.plugins.{p['name']}.url' must be an https URL")
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", str(p.get("sha256") or "")):
+            raise ValueError(f"'ltu_mod.plugins.{p['name']}.sha256' must be pinned")
+        chk = p.get("check")
+        if not chk or Path(chk).is_absolute() or ".." in Path(chk).parts or not chk.startswith("BepInEx/plugins/"):
+            raise ValueError(f"'ltu_mod.plugins.{p['name']}.check' must be a path below BepInEx/plugins/")
     return mod
 
 
@@ -938,12 +965,18 @@ class LtuModManager:
         mod_files = sorted(plugins.rglob(MOD_DLL_NAME)) if plugins.exists() else []
         want = (self.spec or {}).get("mod", {}).get("sha256", "").lower()
         mod_ok = bool(mod_files) and len(mod_files) == 1 and want and sha256_file(mod_files[0]) == want
+        extras = (self.spec or {}).get("plugins", [])
+        known = {Path(p["check"]).as_posix() for p in extras}
+        missing_plugins = [p["name"] for p in extras if not (game_dir / p["check"]).is_file()]
         others = []
         if plugins.exists():
-            others = sorted(str(p.relative_to(plugins)).replace("\\", "/") for p in plugins.rglob("*.dll")
-                            if p.name != MOD_DLL_NAME)
-        if bep and mod_ok:
+            others = sorted(rel for rel in (str(p.relative_to(plugins)).replace("\\", "/") for p in plugins.rglob("*.dll")
+                                            if p.name != MOD_DLL_NAME)
+                            if f"BepInEx/plugins/{rel}" not in known)
+        if bep and mod_ok and not missing_plugins:
             state = "installed"
+        elif bep and mod_ok:
+            state = "incomplete"
         elif bep and mod_files:
             state = "modified"
         elif bep or mod_files:
@@ -951,23 +984,27 @@ class LtuModManager:
         else:
             state = "missing"
         return {"state": state, "bepinex": bep, "mod_files": [str(p) for p in mod_files],
-                "other_plugins": others,
+                "other_plugins": others, "missing_plugins": missing_plugins,
+                "plugins": {p["name"]: p.get("version") for p in extras},
                 "mod_version": (self.spec or {}).get("mod", {}).get("version"),
                 "bepinex_version": (self.spec or {}).get("bepinex", {}).get("version")}
 
     # ---- Installation / Reparatur
-    def _bepinex_zip(self, progress: Progress) -> Path:
-        bep = self.spec["bepinex"]
-        want = bep["sha256"].lower()
+    def _verified_zip(self, part: dict, label: str, progress: Progress) -> Path:
+        want = part["sha256"].lower()
         self.cache.mkdir(parents=True, exist_ok=True)
-        dest = self.cache / bep["url"].rsplit("/", 1)[-1]
+        dest = self.cache / part["url"].rsplit("/", 1)[-1]
         if dest.exists() and sha256_file(dest) == want:
             return dest
-        http_download(bep["url"], dest, progress, f"BepInEx {bep.get('version', '')}".strip())
+        http_download(part["url"], dest, progress, label)
         if sha256_file(dest) != want:
             dest.unlink(missing_ok=True)
-            raise NotApproved(_("BepInEx download does not match the official fingerprint."))
+            raise NotApproved(_("{name} download does not match the official fingerprint.", name=label))
         return dest
+
+    def _bepinex_zip(self, progress: Progress) -> Path:
+        bep = self.spec["bepinex"]
+        return self._verified_zip(bep, f"BepInEx {bep.get('version', '')}".strip(), progress)
 
     def install(self, game_dir: Path, progress: Progress) -> dict:
         if not self.spec:
@@ -987,6 +1024,8 @@ class LtuModManager:
             raise ModError(_("Unsupported game architecture ({arch}). Please contact the moderators.",
                              arch=info["arch"] or "?"))
         zpath = self._bepinex_zip(progress)
+        extra_zips = [(p, self._verified_zip(p, f"{p['name']} {p.get('version', '')}".strip(), progress))
+                      for p in self.spec.get("plugins", [])]
         progress(_("Installing BepInEx …"), None)
         try:
             _safe_extract(zpath, game_dir)
@@ -999,6 +1038,14 @@ class LtuModManager:
                     old.rename(old.with_name(old.name + ".disabled"))
             progress(_("Installing {mod} …", mod=self.spec["mod"].get("name", "LTU Speedrun Mod")), None)
             shutil.copyfile(dll_src, target)
+            for p, z in extra_zips:
+                progress(_("Installing {mod} …", mod=p["name"]), None)
+                check = game_dir / p["check"]
+                # Alte Kopien (z. B. ConfigurationManager.dll direkt in plugins/) deaktivieren
+                for old in plugins.rglob(check.name):
+                    if old.resolve() != check.resolve():
+                        old.rename(old.with_name(old.name + ".disabled"))
+                _safe_extract(z, game_dir)
         except PermissionError as e:
             raise ModError(_("Files in the game folder are in use. Please close Lucky Tower Ultimate and try again.\n\n{e}",
                              e=e)) from e

@@ -472,12 +472,17 @@ class Launcher:
             "installed": _("Speedrun mod: installed ✓ ({mod} {v}, BepInEx {bv})", mod=name,
                            v=st.get("mod_version"), bv=st.get("bepinex_version")),
             "modified": _("Speedrun mod: modified or outdated – please repair"),
-            "incomplete": _("Speedrun mod: incomplete – please repair"),
+            "incomplete": (_("Speedrun mod: {list} missing – please repair", list=", ".join(st["missing_plugins"]))
+                           if st.get("missing_plugins") else _("Speedrun mod: incomplete – please repair")),
             "missing": _("Speedrun mod: not installed (required for top 3 runs)"),
         }[st["state"]]
         if st.get("other_plugins"):
             text += "\n" + _("Other plugins: {list}", list=", ".join(st["other_plugins"]))
         return text
+
+    def _mod_extras(self) -> str:
+        plugins = (self.manifest.get("ltu_mod") or {}).get("plugins") or []
+        return ", ".join(f"{p['name']} {p.get('version', '')}".strip() for p in plugins)
 
     def _ultimate_page(self) -> None:
         found = core.find_steam_game()
@@ -493,8 +498,15 @@ class Launcher:
             if mod.available():
                 st = mod.status(Path(found["path"]))
                 m = spec["mod"]
-                minfo = (_("Installs BepInEx {bv} and {mod} {v} into the game folder", bv=spec["bepinex"].get("version"),
-                           mod=m.get("name", "LTU Speedrun Mod"), v=m.get("version")) + "\n" + self._mod_status_text(st))
+                extras = self._mod_extras()
+                if extras:
+                    minfo = _("Installs BepInEx {bv}, {mod} {v} and {extras} into the game folder",
+                              bv=spec["bepinex"].get("version"), mod=m.get("name", "LTU Speedrun Mod"),
+                              v=m.get("version"), extras=extras)
+                else:
+                    minfo = _("Installs BepInEx {bv} and {mod} {v} into the game folder", bv=spec["bepinex"].get("version"),
+                              mod=m.get("name", "LTU Speedrun Mod"), v=m.get("version"))
+                minfo += "\n" + self._mod_status_text(st)
                 label = _("REPAIR SPEEDRUN MOD") if st["state"] != "missing" else _("INSTALL SPEEDRUN MOD")
                 btns.append((label, lambda p=found["path"]: self.install_ltu_mod(Path(p)), minfo, True))
             else:
@@ -718,7 +730,8 @@ class Launcher:
                 st = self.ltu_mod.status(Path(found["path"]))
                 entry.update({"buildid": found.get("buildid"), "speedrun_mod": st["state"],
                               "speedrun_mod_version": st["mod_version"], "bepinex": st["bepinex_version"],
-                              "other_plugins": st["other_plugins"]})
+                              "other_plugins": st["other_plugins"], "plugins": st.get("plugins", {}),
+                              "missing_plugins": st.get("missing_plugins", [])})
             core.launch_steam_game()
             core.write_launch_log(self.data, entry)
             self.set_status(_("Starting Lucky Tower Ultimate via Steam …"), None)
@@ -729,15 +742,24 @@ class Launcher:
         spec = self.manifest["ltu_mod"]
         m = spec["mod"]
         name = m.get("name", "LTU Speedrun Mod")
-        if not messagebox.askokcancel(_("Install speedrun mod"), _(
-                "This installs BepInEx {bv} and {mod} {v} into:\n{path}\n\nPlease close Lucky Tower Ultimate first.\nContinue?",
-                bv=spec["bepinex"].get("version"), mod=name, v=m.get("version"), path=game_dir)):
+        extras = self._mod_extras()
+        if extras:
+            q = _("This installs BepInEx {bv}, {mod} {v} and {extras} into:\n{path}\n\n"
+                  "Please close Lucky Tower Ultimate first.\nContinue?",
+                  bv=spec["bepinex"].get("version"), mod=name, v=m.get("version"), extras=extras, path=game_dir)
+        else:
+            q = _("This installs BepInEx {bv} and {mod} {v} into:\n{path}\n\nPlease close Lucky Tower Ultimate first.\nContinue?",
+                  bv=spec["bepinex"].get("version"), mod=name, v=m.get("version"), path=game_dir)
+        if not messagebox.askokcancel(_("Install speedrun mod"), q):
             return
 
         def work():
             st = self.ltu_mod.install(game_dir, self.bg_progress)
             self.trail(f"Speedrun mod installed: {st['mod_version']} / BepInEx {st['bepinex_version']}")
-            self.bg_progress(_("{mod} {v} is installed and verified.", mod=name, v=st["mod_version"]), 1.0)
+            done = _("{mod} {v} is installed and verified.", mod=name, v=st["mod_version"])
+            if any(p.get("name") == "ConfigurationManager" for p in spec.get("plugins") or []):
+                done += "  ·  " + _("In game: F1 = ConfigurationManager (mod settings), F2 = fast restart")
+            self.bg_progress(done, 1.0)
             return self._refresh_page
         self.run_bg(work)
 
