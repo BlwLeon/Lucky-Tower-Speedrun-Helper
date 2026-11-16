@@ -65,5 +65,19 @@
       "ruffle_args": [],
       "source_note": "Practice build (room warps, QoL). Not allowed for runs."
     }
-  ]
+  ],
+  "ltu_mod": {
+    "bepinex": {
+      "version": "5.4.23.5",
+      "url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.5/BepInEx_win_x64_5.4.23.5.zip",
+      "sha256": "82f9878551030f54657792c0740d9d51a09500eeae1fba21106b0c441e6732c4"
+    },
+    "mod": {
+      "name": "LTU Speedrun Mod",
+      "version": "1.0.1",
+      "file": "mods/LTUSpeedrunMod.dll",
+      "sha256": "e2e73fb6a46fd44eca7e4f92c6498fa57f2b54cb94e9c9ef3bf7c9a88d83318a",
+      "source": "https://github.com/MadMouse101/LTUSpeedrunMod"
+    }
+  }
 }

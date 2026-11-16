@@ -50,7 +50,7 @@ jobs:
       - name: Build EXE
         run: |
           python -m pip install --upgrade pip pyinstaller
-          python -m PyInstaller --noconfirm --clean --onefile --windowed --name LuckyTowerLauncher --add-data "swf;swf" --add-data "games.json;." launcher.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name LuckyTowerLauncher --add-data "swf;swf" --add-data "mods;mods" --add-data "games.json;." launcher.py
 
       - name: Checksum
         shell: pwsh
