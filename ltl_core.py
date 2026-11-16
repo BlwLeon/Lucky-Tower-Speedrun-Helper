@@ -19,6 +19,7 @@ import platform
 import re
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 import tarfile
@@ -34,7 +35,7 @@ from typing import Callable, Optional
 from ltl_i18n import _
 
 APP_NAME = "LuckyTowerLauncher"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION} (+https://www.speedrun.com/series/Lucky_Tower_Series)"
 
 RUFFLE_REPO = "ruffle-rs/ruffle"
@@ -158,6 +159,7 @@ class Settings:
     manifest_url: Optional[str] = None  # nur Entwicklermodus
     ruffle_tag_override: Optional[str] = None  # nur Entwicklermodus
     language: str = "en"
+    fullscreen: bool = False
     extra: dict = field(default_factory=dict)
 
     @classmethod
@@ -170,6 +172,7 @@ class Settings:
                     manifest_url=raw.get("manifest_url"),
                     ruffle_tag_override=raw.get("ruffle_tag_override"),
                     language=raw.get("language") if raw.get("language") in ("en", "de") else "en",
+                    fullscreen=raw.get("fullscreen") is True,
                     extra=raw.get("extra", {}),
                 )
             except (OSError, ValueError):
@@ -185,6 +188,7 @@ class Settings:
                     "manifest_url": self.manifest_url,
                     "ruffle_tag_override": self.ruffle_tag_override,
                     "language": self.language,
+                    "fullscreen": self.fullscreen,
                     "extra": self.extra,
                 },
                 indent=2,
@@ -303,6 +307,9 @@ def check_official(m: dict) -> dict:
     pins = m.get("ruffle_sha256") or {}
     if not isinstance(pins, dict) or any(not re.fullmatch(r"[0-9a-fA-F]{64}", str(v)) for v in pins.values()):
         raise ValueError("Invalid 'ruffle_sha256'")
+    mod = m.get("ltu_mod")
+    if mod is not None:
+        validate_ltu_mod(mod)
     mirrors = m.get("ruffle_mirror") or {}
     if not isinstance(mirrors, dict) or any(not str(v).startswith("https://") for v in mirrors.values()):
         raise ValueError("Invalid 'ruffle_mirror' (https URLs only)")
@@ -831,6 +838,161 @@ def open_steam_store(appid: str = LTU_STEAM_APPID) -> None:
         open_uri(f"steam://store/{appid}")
     except OSError:
         webbrowser.open(f"https://store.steampowered.com/app/{appid}/")
+
+
+# --------------------------------------------------------------------------
+# Lucky Tower Ultimate: Speedrun-Mod (BepInEx 5)
+# --------------------------------------------------------------------------
+# Manifest-Abschnitt "ltu_mod" (getrennt von "games", ältere Launcher ignorieren ihn):
+#   "ltu_mod": {
+#     "bepinex": {"version": "5.4.23.5", "url": "...BepInEx_win_x64_5.4.23.5.zip", "sha256": "..."},
+#     "mod": {"name": "LTU Speedrun Mod", "version": "1.0.1", "file": "mods/LTUSpeedrunMod.dll", "sha256": "..."}
+#   }
+MOD_DLL_NAME = "LTUSpeedrunMod.dll"
+
+
+def validate_ltu_mod(mod: object) -> dict:
+    if not isinstance(mod, dict):
+        raise ValueError("'ltu_mod' must be an object")
+    bep, dll = mod.get("bepinex"), mod.get("mod")
+    if not isinstance(bep, dict) or not isinstance(dll, dict):
+        raise ValueError("'ltu_mod' needs 'bepinex' and 'mod'")
+    if not str(bep.get("url", "")).startswith("https://"):
+        raise ValueError("'ltu_mod.bepinex.url' must be an https URL")
+    f = dll.get("file")
+    if not f or Path(f).is_absolute() or ".." in Path(f).parts:
+        raise ValueError("'ltu_mod.mod.file' must be a relative path inside the launcher folder")
+    for part, name in ((bep, "bepinex"), (dll, "mod")):
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", str(part.get("sha256") or "")):
+            raise ValueError(f"'ltu_mod.{name}.sha256' must be pinned")
+    return mod
+
+
+class ModError(RuntimeError):
+    """Installation der Speedrun-Mod nicht möglich."""
+
+
+class LtuModManager:
+    def __init__(self, root: Path, spec: Optional[dict]):
+        self.cache = root / "ltu_mod"
+        self.spec = spec
+
+    # ---- Spielordner untersuchen
+    @staticmethod
+    def game_info(game_dir: Path) -> dict:
+        """Prüft, ob BepInEx 5 (x64, Mono) passt."""
+        data_dirs = [d for d in game_dir.glob("*_Data") if d.is_dir()]
+        exe = None
+        for d in data_dirs:
+            cand = game_dir / (d.name[:-5] + ".exe")
+            if cand.exists():
+                exe = cand
+                break
+        mono = any((d / "Managed" / "Assembly-CSharp.dll").exists() for d in data_dirs)
+        il2cpp = (game_dir / "GameAssembly.dll").exists()
+        arch = None
+        if exe:
+            try:
+                with open(exe, "rb") as fh:
+                    fh.seek(0x3C)
+                    pe = struct.unpack("<I", fh.read(4))[0]
+                    fh.seek(pe)
+                    if fh.read(4) == b"PE\0\0":
+                        machine = struct.unpack("<H", fh.read(2))[0]
+                        arch = {0x8664: "x64", 0x14C: "x86", 0xAA64: "arm64"}.get(machine, hex(machine))
+            except (OSError, struct.error):
+                arch = None
+        return {"exe": str(exe) if exe else None, "mono": mono and not il2cpp, "il2cpp": il2cpp, "arch": arch}
+
+    def bundled_dll(self) -> Optional[Path]:
+        if not self.spec:
+            return None
+        f = self.spec["mod"]["file"]
+        for base in (app_dir(), resource_dir()):
+            p = base / f
+            if p.is_file():
+                return p
+        return None
+
+    def available(self) -> bool:
+        return bool(self.spec) and self.bundled_dll() is not None
+
+    def status(self, game_dir: Path) -> dict:
+        """installed: BepInEx + Mod vorhanden und Mod-DLL entspricht dem Fingerabdruck."""
+        plugins = game_dir / "BepInEx" / "plugins"
+        bep = (game_dir / "BepInEx" / "core" / "BepInEx.dll").exists() and (game_dir / "winhttp.dll").exists()
+        mod_files = sorted(plugins.rglob(MOD_DLL_NAME)) if plugins.exists() else []
+        want = (self.spec or {}).get("mod", {}).get("sha256", "").lower()
+        mod_ok = bool(mod_files) and len(mod_files) == 1 and want and sha256_file(mod_files[0]) == want
+        others = []
+        if plugins.exists():
+            others = sorted(str(p.relative_to(plugins)).replace("\\", "/") for p in plugins.rglob("*.dll")
+                            if p.name != MOD_DLL_NAME)
+        if bep and mod_ok:
+            state = "installed"
+        elif bep and mod_files:
+            state = "modified"
+        elif bep or mod_files:
+            state = "incomplete"
+        else:
+            state = "missing"
+        return {"state": state, "bepinex": bep, "mod_files": [str(p) for p in mod_files],
+                "other_plugins": others,
+                "mod_version": (self.spec or {}).get("mod", {}).get("version"),
+                "bepinex_version": (self.spec or {}).get("bepinex", {}).get("version")}
+
+    # ---- Installation / Reparatur
+    def _bepinex_zip(self, progress: Progress) -> Path:
+        bep = self.spec["bepinex"]
+        want = bep["sha256"].lower()
+        self.cache.mkdir(parents=True, exist_ok=True)
+        dest = self.cache / bep["url"].rsplit("/", 1)[-1]
+        if dest.exists() and sha256_file(dest) == want:
+            return dest
+        http_download(bep["url"], dest, progress, f"BepInEx {bep.get('version', '')}".strip())
+        if sha256_file(dest) != want:
+            dest.unlink(missing_ok=True)
+            raise NotApproved(_("BepInEx download does not match the official fingerprint."))
+        return dest
+
+    def install(self, game_dir: Path, progress: Progress) -> dict:
+        if not self.spec:
+            raise ModError(_("No speedrun mod is defined in the version list."))
+        dll_src = self.bundled_dll()
+        if not dll_src:
+            raise ModError(_("The speedrun mod file is missing from the launcher. Please download the launcher again."))
+        if sha256_file(dll_src) != self.spec["mod"]["sha256"].lower():
+            raise NotApproved(_("The bundled speedrun mod does not match the official fingerprint."))
+        info = self.game_info(game_dir)
+        if not info["exe"]:
+            raise ModError(_("Lucky Tower Ultimate was not found in {path}.", path=game_dir))
+        if info["il2cpp"] or not info["mono"]:
+            raise ModError(_("This Lucky Tower Ultimate build is not a Unity Mono game – BepInEx 5 cannot be installed. "
+                             "Please contact the moderators."))
+        if info["arch"] != "x64":
+            raise ModError(_("Unsupported game architecture ({arch}). Please contact the moderators.",
+                             arch=info["arch"] or "?"))
+        zpath = self._bepinex_zip(progress)
+        progress(_("Installing BepInEx …"), None)
+        try:
+            _safe_extract(zpath, game_dir)
+            plugins = game_dir / "BepInEx" / "plugins"
+            plugins.mkdir(parents=True, exist_ok=True)
+            # Doppelte/alte Kopien der Mod deaktivieren (sonst lädt BepInEx evtl. zwei Versionen)
+            target = plugins / MOD_DLL_NAME
+            for old in plugins.rglob(MOD_DLL_NAME):
+                if old != target:
+                    old.rename(old.with_name(old.name + ".disabled"))
+            progress(_("Installing {mod} …", mod=self.spec["mod"].get("name", "LTU Speedrun Mod")), None)
+            shutil.copyfile(dll_src, target)
+        except PermissionError as e:
+            raise ModError(_("Files in the game folder are in use. Please close Lucky Tower Ultimate and try again.\n\n{e}",
+                             e=e)) from e
+        st = self.status(game_dir)
+        if st["state"] != "installed":
+            raise ModError(_("Installation could not be verified (state: {state}).", state=st["state"]))
+        progress(_("Speedrun mod installed."), 1.0)
+        return st
 
 
 # --------------------------------------------------------------------------

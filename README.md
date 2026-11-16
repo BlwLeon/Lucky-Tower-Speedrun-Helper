@@ -41,6 +41,10 @@ Version 1.0 officially supports **Windows (64-bit)** only. That is the only plat
 - **Pinned Ruffle**: The Ruffle build named in `games.json` (`ruffle_tag`) is downloaded from GitHub and checked against GitHub's checksum.
   The executable is also verified against `ruffle_sha256` before every launch. A modified Ruffle is reinstalled automatically.
 - **Steam detection** for Lucky Tower Ultimate across all Steam library folders. If the game is not installed, the launcher opens the store page.
+- **One-click speedrun mod for Lucky Tower Ultimate**: **INSTALL / REPAIR SPEEDRUN MOD** installs [BepInEx 5](https://github.com/BepInEx/BepInEx) (x64) and the [LTU Speedrun Mod](https://github.com/MadMouse101/LTUSpeedrunMod) into the game folder. The mod is required for top 3 runs.
+  Both are verified by SHA-256. The LTU page shows the mod status (installed ✓ / modified / missing) and lists any other BepInEx plugins, which are also written to the launch log.
+- **Fullscreen option**: Settings → **FULLSCREEN: ON** starts Lucky Tower 1 & 2 in fullscreen (Ruffle `--fullscreen`).
+- **Steam folder shortcut**: Settings → **STEAM FOLDER** opens the Lucky Tower Ultimate installation folder.
 - **Launch log** (`launch_log.jsonl`): Each start records time, game, hash and Ruffle version, so moderators have something to check during verification.
 - **Status bar**: Shows whether the game is running and the session time, and reports Ruffle errors with Ruffle's own output.
 - **Practice versions** for Lucky Tower 1 & 2 (room warps, QoL). Separate blue button, warning before every start, marked in the launch log.
@@ -137,6 +141,14 @@ New *bundled* SWFs still need a new build.
 - `ruffle_sha256`: hash of the Ruffle executable per platform (`windows-x86_64`, `macos-arm64`, `linux-x86_64`, …). Platforms without an entry still run, and the launch log marks them as unverified.
 - `practice`: an optional, separate list of practice versions, using the same fields as `games`. They appear as a blue **PRACTICE** button on the page of the game with the same `title`.
   A pinned `sha256` is optional for these. `pin_hashes.py` pins them automatically, which catches broken files. They are kept separate from `games` so that launchers up to 1.0.1, which read the online manifest, ignore them.
+- `ltu_mod`: the Lucky Tower Ultimate speedrun mod (optional, separate section, so launchers up to 1.1.0 ignore it):
+  ```json
+  "ltu_mod": {
+    "bepinex": { "version": "5.4.23.5", "url": "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.5/BepInEx_win_x64_5.4.23.5.zip", "sha256": "82f98785…" },
+    "mod": { "name": "LTU Speedrun Mod", "version": "1.0.1", "file": "mods/LTUSpeedrunMod.dll", "sha256": "…" }
+  }
+  ```
+  Both hashes must be pinned. The installer checks that the game is a 64-bit Unity Mono build. It extracts BepInEx into the game folder and copies the mod to `BepInEx/plugins/`, disabling any duplicate older copies.
 - `ruffle_mirror`: fallback download per platform, used if the pinned Ruffle release is no longer available on GitHub. It is used only when `ruffle_sha256` is pinned for that platform, so the binary is still verified.
 
 ## Data folder
@@ -170,4 +182,6 @@ Running from source is possible, but the launch log records it (`"build": "sourc
 
 - Lucky Tower, Lucky Tower 2 and Lucky Tower Ultimate © Studio Seufz. The SWF files in `swf/` belong to their respective owners and are **not** covered by this repository's license. They are included only so runners can play the versions approved for the leaderboard.
 - Flash emulation by [Ruffle](https://github.com/ruffle-rs/ruffle) (MIT / Apache-2.0), downloaded at runtime.
+- [BepInEx](https://github.com/BepInEx/BepInEx) (LGPL-2.1), downloaded at runtime for the Lucky Tower Ultimate speedrun mod.
+- [LTU Speedrun Mod](https://github.com/MadMouse101/LTUSpeedrunMod) by MadMouse101 (MIT), bundled in `mods/`.
 - Launcher code: [MIT License](LICENSE).

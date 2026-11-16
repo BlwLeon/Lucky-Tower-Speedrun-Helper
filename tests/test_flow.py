@@ -90,6 +90,7 @@ print("manifest ok")
 
 # --- 6. Kompletter Launch über die GUI (Mock-Tk)
 import tkinter as tk, launcher
+LB=lambda a: [e[0] for _t,e in a.flat_buttons]
 from tkinter import messagebox
 launched=[]
 class FakeProc:
@@ -251,7 +252,7 @@ try: core.check_official(dict(official, games=[gun])); raise SystemExit("unpinne
 except ValueError: pass
 # Einstellungen: keine Hash-Export-Funktion im offiziellen Modus
 app2.go(app2._settings_page)
-labels=[b[0] for b in app2.buttons]; assert "EXPORT HASHES" not in labels and "UPDATE RUFFLE" not in labels and "LANGUAGE: ENGLISH" in labels, labels
+labels=LB(app2); assert "EXPORT HASHES" not in labels and "UPDATE RUFFLE" not in labels and "LANGUAGE: EN" in labels, labels
 try: app2.swfs.fetch_raw(app2.manifest["games"][0], lambda t,f:None); raise SystemExit("fetch_raw in strict")
 except core.NotApproved: pass
 # Launch-Log kennzeichnet Modus
@@ -262,10 +263,10 @@ print("official mode ok")
 import ltl_i18n
 assert ltl_i18n.get_language()=="en" and json.loads((root/"settings.json").read_text()).get("language","en")=="en"
 app2.go(app2._settings_page)
-idx=[b[0] for b in app2.buttons].index("LANGUAGE: ENGLISH"); app2.cv.click(f"btn{idx}")
+app2.cv.click(app2.button("LANGUAGE: EN")[0])
 assert ltl_i18n.get_language()=="de" and json.loads((root/"settings.json").read_text())["language"]=="de"
-labels=[b[0] for b in app2.buttons]; assert "SPRACHE: DEUTSCH" in labels and "ZURÜCK" in labels and app2.subtitle=="EINSTELLUNGEN", labels
-app2.show_main(); assert "EINSTELLUNGEN" in [b[0] for b in app2.buttons]
+labels=LB(app2); assert "SPRACHE: DE" in labels and "ZURÜCK" in labels and app2.subtitle=="EINSTELLUNGEN", labels
+app2.show_main(); assert "EINSTELLUNGEN" in LB(app2)
 app2.go(lambda: app2._game_page("Lucky Tower")); assert app2.buttons[-1][0]=="ZURÜCK" and "Quelle:" in app2.buttons[0][2], app2.buttons
 assert ltl_i18n._(app2.manifest["games"][0].get("label") or "PLAY") in ("SPIELEN","OFFICIAL") and ltl_i18n._("PLAY")=="SPIELEN"
 # deutsche Fehlermeldungen aus dem Kern
@@ -273,10 +274,10 @@ gun2=dict(app2.manifest["games"][1], sha256=None); app2.launch(gun2); pump2()
 assert "keine offiziell freigegebene Version" in messagebox.log[-1][2], messagebox.log[-1]
 # Neustart übernimmt gespeicherte Sprache
 r3=tk.Tk(); app3=launcher.Launcher(r3); sys.excepthook=sys.__excepthook__
-assert ltl_i18n.get_language()=="de" and "EINSTELLUNGEN" in [b[0] for b in app3.buttons]
+assert ltl_i18n.get_language()=="de" and "EINSTELLUNGEN" in LB(app3)
 # zurück auf Englisch
-app3.go(app3._settings_page); idx=[b[0] for b in app3.buttons].index("SPRACHE: DEUTSCH"); app3.cv.click(f"btn{idx}")
-assert ltl_i18n.get_language()=="en" and "LANGUAGE: ENGLISH" in [b[0] for b in app3.buttons]
+app3.go(app3._settings_page); app3.cv.click(app3.button("SPRACHE: DE")[0])
+assert ltl_i18n.get_language()=="en" and "LANGUAGE: EN" in LB(app3)
 # alle deutschen Übersetzungen haben dieselben Platzhalter wie das Englische
 import string
 for en,de in ltl_i18n.DE.items():
@@ -360,4 +361,74 @@ except core.NotApproved: pass
 core.http_json=_hj
 print("ruffle pin ok")
 
+# --- 11. LTU Speedrun-Mod (BepInEx), Steam-Ordner, Vollbild (1.2.0)
+import struct, zipfile as zf
+def fake_game(d, machine=0x8664, il2cpp=False):
+    (d/"Lucky Tower Ultimate_Data"/"Managed").mkdir(parents=True, exist_ok=True)
+    (d/"Lucky Tower Ultimate_Data"/"Managed"/"Assembly-CSharp.dll").write_bytes(b"x")
+    pe=bytearray(0x200); pe[0:2]=b"MZ"; struct.pack_into("<I",pe,0x3C,0x80); pe[0x80:0x84]=b"PE\0\0"; struct.pack_into("<H",pe,0x84,machine)
+    (d/"Lucky Tower Ultimate.exe").write_bytes(bytes(pe))
+    if il2cpp: (d/"GameAssembly.dll").write_bytes(b"x")
+    return d
+bz=io.BytesIO()
+with zf.ZipFile(bz,"w") as z:
+    for n,c in {".doorstop_version":"4.3","winhttp.dll":"doorstop","doorstop_config.ini":"[General]","BepInEx/core/BepInEx.dll":"bep","BepInEx/core/0Harmony.dll":"harmony"}.items():
+        z.writestr(n,c)
+(srv/"BepInEx_win_x64_5.4.23.5.zip").write_bytes(bz.getvalue())
+(offd/"mods").mkdir(exist_ok=True); mod_dll=b"MZ-fake-LTUSpeedrunMod"; (offd/"mods"/"LTUSpeedrunMod.dll").write_bytes(mod_dll)
+spec={"bepinex":{"version":"5.4.23.5","url":base+"/BepInEx_win_x64_5.4.23.5.zip","sha256":H(bz.getvalue())},
+      "mod":{"name":"LTU Speedrun Mod","version":"1.0.1","file":"mods/LTUSpeedrunMod.dll","sha256":H(mod_dll)}}
+try: core.validate_ltu_mod(dict(spec, mod=dict(spec["mod"], sha256=None))); raise SystemExit("unpinned mod accepted")
+except ValueError: pass
+try: core.check_official(dict(official, ltu_mod={"bepinex":{"url":"http://x","sha256":"0"*64},"mod":spec["mod"]})); raise SystemExit("http bepinex accepted")
+except ValueError: pass
+gd=fake_game(pathlib.Path(tmp,"steam","common","Lucky Tower Ultimate"))
+mm=core.LtuModManager(root, spec)
+assert mm.available() and mm.status(gd)["state"]=="missing"
+st=mm.install(gd, lambda t,f:None); assert st["state"]=="installed" and (gd/"BepInEx"/"plugins"/"LTUSpeedrunMod.dll").read_bytes()==mod_dll
+# Fremde Plugins werden gelistet, alte Doppelkopie deaktiviert
+(gd/"BepInEx"/"plugins"/"Cheats").mkdir(); (gd/"BepInEx"/"plugins"/"Cheats"/"SpeedHack.dll").write_bytes(b"x")
+(gd/"BepInEx"/"plugins"/"old").mkdir(); (gd/"BepInEx"/"plugins"/"old"/"LTUSpeedrunMod.dll").write_bytes(b"old")
+st=mm.status(gd); assert st["state"]=="modified" and st["other_plugins"]==["Cheats/SpeedHack.dll"], st
+st=mm.install(gd, lambda t,f:None); assert st["state"]=="installed" and (gd/"BepInEx"/"plugins"/"old"/"LTUSpeedrunMod.dll.disabled").exists()
+# Manipulierte Mod -> "modified" -> Reparatur
+(gd/"BepInEx"/"plugins"/"LTUSpeedrunMod.dll").write_bytes(b"hacked"); assert mm.status(gd)["state"]=="modified"
+assert mm.install(gd, lambda t,f:None)["state"]=="installed"
+# BepInEx-Cache wird wiederverwendet, falscher Hash abgelehnt
+try: core.LtuModManager(pathlib.Path(tmp,"fresh"), dict(spec, bepinex=dict(spec["bepinex"], sha256="4"*64))).install(gd, lambda t,f:None); raise SystemExit("bad bepinex accepted")
+except core.NotApproved: pass
+# Mitgelieferte DLL verändert -> abgelehnt
+(offd/"mods"/"LTUSpeedrunMod.dll").write_bytes(b"tampered")
+try: mm.install(gd, lambda t,f:None); raise SystemExit("tampered bundled dll accepted")
+except core.NotApproved: pass
+(offd/"mods"/"LTUSpeedrunMod.dll").write_bytes(mod_dll)
+# Falsches Spiel: IL2CPP / x86 / kein Spiel
+for bad,msg in ((fake_game(pathlib.Path(tmp,"il2cpp"), il2cpp=True),"Mono"),(fake_game(pathlib.Path(tmp,"x86"), machine=0x14C),"x86"),(pathlib.Path(tmp,"empty"),"not found")):
+    bad.mkdir(exist_ok=True)
+    try: mm.install(bad, lambda t,f:None); raise SystemExit("bad game accepted")
+    except core.ModError as e: assert msg in str(e), (msg, e)
+# --- UI: LTU-Seite, Steam-Ordner, Vollbild
+core.find_steam_game=lambda appid=core.LTU_STEAM_APPID: {"appid":appid,"name":"Lucky Tower Ultimate","buildid":"123","path":str(gd),"installed":True}
+opened=[]; core.open_folder=lambda p: opened.append(str(p)); core.launch_steam_game=lambda appid=core.LTU_STEAM_APPID: opened.append("steam")
+app4.manifest.pop("ltu_mod",None); app4.go(app4._ultimate_page)
+assert not app4.button("INSTALL SPEEDRUN MOD")[1][3]   # ohne Mod im Manifest deaktiviert
+app4.manifest["ltu_mod"]=spec; app4._refresh_page()
+tag,e=app4.button("REPAIR SPEEDRUN MOD"); assert e[3] and "installed ✓" in e[2] and "SpeedHack" in e[2], e
+messagebox.answer=False; app4.cv.click(tag); pump4(); assert messagebox.log[-1][0]=="okcancel"   # abgebrochen
+(gd/"BepInEx"/"plugins"/"LTUSpeedrunMod.dll").write_bytes(b"hacked"); app4._refresh_page()
+assert "modified" in app4.button("REPAIR SPEEDRUN MOD")[1][2]
+messagebox.answer=True; app4.cv.click(app4.button("REPAIR SPEEDRUN MOD")[0]); pump4(); pump4()
+assert mm.status(gd)["state"]=="installed" and "installed and verified" in app4.status_text, app4.status_text
+app4.cv.click(app4.button("PLAY (STEAM)")[0])
+lg=json.loads((root/"launch_log.jsonl").read_text().strip().splitlines()[-1])
+assert lg["game"]=="ltu" and lg["speedrun_mod"]=="installed" and lg["speedrun_mod_version"]=="1.0.1" and lg["other_plugins"]==["Cheats/SpeedHack.dll"], lg
+app4.go(app4._settings_page); app4.cv.click(app4.button("STEAM FOLDER")[0]); assert opened[-1]==str(gd)
+app4.cv.click(app4.button("FULLSCREEN: OFF")[0]); assert app4.settings.fullscreen and json.loads((root/"settings.json").read_text())["fullscreen"] is True
+assert "FULLSCREEN: ON" in LB(app4)
+app4.launch(app4.manifest["games"][0]); pump4(); time.sleep(0.2); pump4(1)
+assert "--fullscreen" in launched[-1][2] and json.loads((root/"launch_log.jsonl").read_text().strip().splitlines()[-1])["fullscreen"] is True
+app4.cv.click(app4.button("FULLSCREEN: ON")[0]); assert not app4.settings.fullscreen
+core.find_steam_game=lambda appid=core.LTU_STEAM_APPID: None; app4._refresh_page()
+assert not app4.button("STEAM FOLDER")[1][3]
+print("ltu mod / fullscreen ok")
 print("ALLE TESTS OK")

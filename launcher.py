@@ -63,6 +63,7 @@ class Launcher:
 
         self.f_title = (pick_font("Georgia", "DejaVu Serif", "Times New Roman"), 30, "bold")
         self.f_btn = (pick_font("Trebuchet MS", "Verdana", "DejaVu Sans", "Helvetica"), 15, "bold")
+        self.f_btn_half = (self.f_btn[0], 11, "bold")
         self.f_small = (pick_font("Segoe UI", "Verdana", "DejaVu Sans", "Helvetica"), 9)
         self.f_info = (pick_font("Segoe UI", "Verdana", "DejaVu Sans", "Helvetica"), 10, "bold")
 
@@ -339,46 +340,63 @@ class Launcher:
         self._render_buttons()
 
     def _render_buttons(self) -> None:
+        """self.buttons: Einträge sind (label, aktion, info, aktiv[, stil]) oder eine Liste
+        aus zwei solchen Tupeln = eine Zeile mit zwei halben Knöpfen."""
         cv = self.cv
         cv.delete("ui")
         if getattr(self, "subtitle", ""):
             self._outlined_text(W // 2, 300, self.subtitle, self.f_info, CREAM, INK, 2, tags=("ui",))
         n = len(self.buttons)
-        bw = 290
+        bw = 310
         bh, gap = (40, 10) if n <= 4 else ((34, 6) if n == 5 else (30, 5))
         y0 = 318 if n <= 5 else 312
-        for i, (label, action, info, enabled, *style) in enumerate(self.buttons):
-            practice = bool(style) and style[0] == "practice"
-            base, line = (BTN_PRACTICE, BTN_PRACTICE_LINE) if practice else (BTN, "#7b5636")
+        self.flat_buttons = []  # [(tag, eintrag)] – auch für Tests
+        for i, entry in enumerate(self.buttons):
             y = y0 + i * (bh + gap)
-            x1, x2 = W // 2 - bw // 2, W // 2 + bw // 2
-            active = enabled and not self.busy
-            tag = f"btn{i}"
-            body = self._round_rect(x1, y, x2, y + bh, 14, fill=base if active else BTN_DISABLED,
-                                    outline=BTN_EDGE, width=3, tags=("ui", tag))
-            cv.create_line(x1 + 14, y + 6, x2 - 14, y + 6, fill=line if active else "#7f746b",
-                           width=2, tags=("ui", tag))
-            txt = cv.create_text(W // 2, y + bh // 2 + 1, text=label, font=self.f_btn,
-                                 fill=CREAM if active else "#c9bfae", tags=("ui", tag))
-            if active:
-                cv.tag_bind(tag, "<Enter>", lambda e, b=body, inf=info, p=practice: self._hover(b, True, inf, p))
-                cv.tag_bind(tag, "<Leave>", lambda e, b=body, p=practice: self._hover(b, False, "", p))
-                cv.tag_bind(tag, "<Button-1>", lambda e, a=action, lb=label: (self.trail(f"Click: {lb}"), a()))
+            if isinstance(entry, list):
+                half = (bw - 8) // 2
+                cells = [(f"btn{i}_{j}", e, W // 2 - bw // 2 + j * (half + 8), half, self.f_btn_half)
+                         for j, e in enumerate(entry)]
             else:
-                for ev in ("<Enter>", "<Leave>", "<Button-1>"):
-                    cv.tag_unbind(tag, ev)
-            del txt
+                cells = [(f"btn{i}", entry, W // 2 - bw // 2, bw, self.f_btn)]
+            for tag, (label, action, info, enabled, *style), x1, w, font in cells:
+                self.flat_buttons.append((tag, (label, action, info, enabled, *style)))
+                practice = bool(style) and style[0] == "practice"
+                base, line = (BTN_PRACTICE, BTN_PRACTICE_LINE) if practice else (BTN, "#7b5636")
+                x2 = x1 + w
+                active = enabled and not self.busy
+                body = self._round_rect(x1, y, x2, y + bh, 14, fill=base if active else BTN_DISABLED,
+                                        outline=BTN_EDGE, width=3, tags=("ui", tag))
+                cv.create_line(x1 + 14, y + 6, x2 - 14, y + 6, fill=line if active else "#7f746b",
+                               width=2, tags=("ui", tag))
+                cv.create_text((x1 + x2) // 2, y + bh // 2 + 1, text=label, font=font,
+                               fill=CREAM if active else "#c9bfae", tags=("ui", tag))
+                # Infotext auch bei deaktivierten Knöpfen (erklärt, warum)
+                cv.tag_bind(tag, "<Enter>", lambda e, b=body, inf=info, p=practice, a=active: self._hover(b, True, inf, p, a))
+                cv.tag_bind(tag, "<Leave>", lambda e, b=body, p=practice, a=active: self._hover(b, False, "", p, a))
+                if active:
+                    cv.tag_bind(tag, "<Button-1>", lambda e, a=action, lb=label: (self.trail(f"Click: {lb}"), a()))
+                else:
+                    cv.tag_unbind(tag, "<Button-1>")
         self.info_bg = self._round_rect(70, H - 76, W - 70, H - 36, 12, fill="#f3e6c4", outline=BTN_EDGE,
                                         width=2, tags=("ui",), state="hidden")
         self.info_id = cv.create_text(W // 2, H - 56, text="", font=self.f_small, fill=INK,
                                       tags=("ui",), width=W - 120, justify="center")
 
-    def _hover(self, body, on: bool, info: str, practice: bool = False) -> None:
-        if practice:
-            self.cv.itemconfigure(body, fill=BTN_PRACTICE_HOVER if on else BTN_PRACTICE)
-        else:
-            self.cv.itemconfigure(body, fill=BTN_HOVER if on else BTN)
-        self.cv.configure(cursor="hand2" if on else "")
+    def button(self, label: str) -> tuple:
+        """(tag, eintrag) eines Knopfes nach Beschriftung."""
+        for tag, e in self.flat_buttons:
+            if e[0] == label:
+                return tag, e
+        raise KeyError(label)
+
+    def _hover(self, body, on: bool, info: str, practice: bool = False, active: bool = True) -> None:
+        if active:
+            if practice:
+                self.cv.itemconfigure(body, fill=BTN_PRACTICE_HOVER if on else BTN_PRACTICE)
+            else:
+                self.cv.itemconfigure(body, fill=BTN_HOVER if on else BTN)
+            self.cv.configure(cursor="hand2" if on else "")
         self.cv.itemconfigure(self.info_id, text=info if on else "")
         self.cv.itemconfigure(self.info_bg, state="normal" if (on and info) else "hidden")
 
@@ -443,12 +461,45 @@ class Launcher:
         btns.append((_("BACK"), self.back, "", True))
         self._set_page(title.upper(), btns)
 
+    @property
+    def ltu_mod(self) -> core.LtuModManager:
+        return core.LtuModManager(self.data, self.manifest.get("ltu_mod"))
+
+    def _mod_status_text(self, st: dict) -> str:
+        spec = self.manifest.get("ltu_mod") or {}
+        name = spec.get("mod", {}).get("name", "LTU Speedrun Mod")
+        text = {
+            "installed": _("Speedrun mod: installed ✓ ({mod} {v}, BepInEx {bv})", mod=name,
+                           v=st.get("mod_version"), bv=st.get("bepinex_version")),
+            "modified": _("Speedrun mod: modified or outdated – please repair"),
+            "incomplete": _("Speedrun mod: incomplete – please repair"),
+            "missing": _("Speedrun mod: not installed (required for top 3 runs)"),
+        }[st["state"]]
+        if st.get("other_plugins"):
+            text += "\n" + _("Other plugins: {list}", list=", ".join(st["other_plugins"]))
+        return text
+
     def _ultimate_page(self) -> None:
         found = core.find_steam_game()
         if found:
             info = _("Found: {path}", path=found["path"]) + (
                 "  ·  " + _("Build {id}", id=found["buildid"]) if found.get("buildid") else "")
+            mod = self.ltu_mod
+            spec = self.manifest.get("ltu_mod") or {}
+            if mod.spec:
+                st = mod.status(Path(found["path"]))
+                info += "\n" + self._mod_status_text(st)
             btns = [(_("PLAY (STEAM)"), self.launch_ultimate, info, True)]
+            if mod.available():
+                st = mod.status(Path(found["path"]))
+                m = spec["mod"]
+                minfo = (_("Installs BepInEx {bv} and {mod} {v} into the game folder", bv=spec["bepinex"].get("version"),
+                           mod=m.get("name", "LTU Speedrun Mod"), v=m.get("version")) + "\n" + self._mod_status_text(st))
+                label = _("REPAIR SPEEDRUN MOD") if st["state"] != "missing" else _("INSTALL SPEEDRUN MOD")
+                btns.append((label, lambda p=found["path"]: self.install_ltu_mod(Path(p)), minfo, True))
+            else:
+                btns.append((_("INSTALL SPEEDRUN MOD"), lambda: None,
+                             _("Speedrun mod not available in this launcher version"), False))
             sub = "LUCKY TOWER ULTIMATE"
         else:
             btns = [(_("OPEN STEAM STORE"), lambda: core.open_steam_store(),
@@ -463,15 +514,26 @@ class Launcher:
         pinned = self._wanted_ruffle_tag()
         rinfo = _("Installed: {tag}", tag=cur["tag"] if cur else _("none")) + "  ·  " + (
             _("pinned: {tag}", tag=pinned) if pinned else _("latest version"))
-        lang = (_("LANGUAGE: ENGLISH"), self.toggle_language, _("Switch to German / Auf Deutsch umschalten"), True)
+        found = core.find_steam_game()
+        folders = [
+            (_("DATA FOLDER"), lambda: core.open_folder(self.data), str(self.data), True),
+            (_("STEAM FOLDER"), (lambda p=found["path"]: core.open_folder(Path(p))) if found else (lambda: None),
+             (_("Opens the Lucky Tower Ultimate installation folder") + f"\n{found['path']}") if found
+             else _("Lucky Tower Ultimate is not installed"), bool(found)),
+        ]
+        prefs = [
+            (_("FULLSCREEN: ON") if self.settings.fullscreen else _("FULLSCREEN: OFF"), self.toggle_fullscreen,
+             _("Start Lucky Tower 1 & 2 in fullscreen (Ruffle --fullscreen)"), True),
+            (_("LANGUAGE: EN"), self.toggle_language, _("Switch to German / Auf Deutsch umschalten"), True),
+        ]
         if self.dev:
             btns = [
                 (_("UPDATE RUFFLE"), self.update_ruffle, rinfo, True),
                 (_("EXPORT HASHES"), self.export_hashes,
                  _("Downloads all SWFs, computes SHA-256 and saves games_pinned.json (incl. Ruffle hash)"), True),
                 (_("RELOAD DOWNLOADS"), self.clear_cache, _("Deletes downloaded SWFs and remembered hashes"), True),
-                (_("OPEN DATA FOLDER"), lambda: core.open_folder(self.data), str(self.data), True),
-                lang,
+                folders,
+                prefs,
                 (_("BACK"), self.back, f"Manifest: {self.manifest_src}", True),
             ]
         else:
@@ -479,11 +541,21 @@ class Launcher:
                 (_("REPAIR RUFFLE"), self.reinstall_ruffle, rinfo + "  ·  " + _("reinstalls the official version"), True),
                 (_("RELOAD DOWNLOADS"), self.clear_cache,
                  _("Re-downloads games – only the official versions are accepted"), True),
-                (_("OPEN DATA FOLDER"), lambda: core.open_folder(self.data), str(self.data), True),
-                lang,
+                folders,
+                prefs,
                 (_("BACK"), self.back, _("Version list: {src}", src=self.manifest_src), True),
             ]
         self._set_page(_("SETTINGS"), btns)
+
+    def toggle_fullscreen(self) -> None:
+        self.settings.fullscreen = not self.settings.fullscreen
+        try:
+            self.settings.save(self.data)
+        except OSError:
+            pass
+        self.trail(f"Fullscreen: {self.settings.fullscreen}")
+        self.set_status(_("Fullscreen: on") if self.settings.fullscreen else _("Fullscreen: off"), None)
+        self._refresh_page()
 
     def toggle_language(self) -> None:
         new = "de" if ltl_i18n.get_language() == "en" else "en"
@@ -568,13 +640,17 @@ class Launcher:
                 return lambda: self._ask_local(game, msg, work)
             self.bg_progress(_("Starting {name} …", name=name), None)
             log_path = self.data / "logs" / f"ruffle_{game['id']}.log"
-            proc = core.launch_swf(rs["exe"], swf, list(game.get("ruffle_args") or []), log_path)
+            args = list(game.get("ruffle_args") or [])
+            if self.settings.fullscreen and "--fullscreen" not in args:
+                args.append("--fullscreen")
+            proc = core.launch_swf(rs["exe"], swf, args, log_path)
             core.write_launch_log(self.data, {
                 "game": game["id"], "url": game.get("url"), "file": game.get("file"),
                 "sha256": h, "verification": ver, "ruffle": rs["tag"],
                 "ruffle_verification": rs.get("verification", "ok"),
                 "mode": "dev" if self.dev else "official",
                 "practice": practice,
+                "fullscreen": self.settings.fullscreen,
                 "build": "exe" if getattr(sys, "frozen", False) else "source",
                 "manifest": self.manifest_src})
             detail = f"SHA-256 {h[:12]}… ({_(ver)})  ·  Ruffle {rs['tag']}"
@@ -634,11 +710,36 @@ class Launcher:
 
     def launch_ultimate(self) -> None:
         try:
+            entry = {"game": "ltu", "steam_appid": core.LTU_STEAM_APPID,
+                     "mode": "dev" if self.dev else "official",
+                     "build": "exe" if getattr(sys, "frozen", False) else "source"}
+            found = core.find_steam_game()
+            if found and self.ltu_mod.spec:
+                st = self.ltu_mod.status(Path(found["path"]))
+                entry.update({"buildid": found.get("buildid"), "speedrun_mod": st["state"],
+                              "speedrun_mod_version": st["mod_version"], "bepinex": st["bepinex_version"],
+                              "other_plugins": st["other_plugins"]})
             core.launch_steam_game()
-            core.write_launch_log(self.data, {"game": "ltu", "steam_appid": core.LTU_STEAM_APPID})
+            core.write_launch_log(self.data, entry)
             self.set_status(_("Starting Lucky Tower Ultimate via Steam …"), None)
         except OSError as e:
             messagebox.showerror(_("Error"), _("Steam could not be opened:\n{e}", e=e))
+
+    def install_ltu_mod(self, game_dir: Path) -> None:
+        spec = self.manifest["ltu_mod"]
+        m = spec["mod"]
+        name = m.get("name", "LTU Speedrun Mod")
+        if not messagebox.askokcancel(_("Install speedrun mod"), _(
+                "This installs BepInEx {bv} and {mod} {v} into:\n{path}\n\nPlease close Lucky Tower Ultimate first.\nContinue?",
+                bv=spec["bepinex"].get("version"), mod=name, v=m.get("version"), path=game_dir)):
+            return
+
+        def work():
+            st = self.ltu_mod.install(game_dir, self.bg_progress)
+            self.trail(f"Speedrun mod installed: {st['mod_version']} / BepInEx {st['bepinex_version']}")
+            self.bg_progress(_("{mod} {v} is installed and verified.", mod=name, v=st["mod_version"]), 1.0)
+            return self._refresh_page
+        self.run_bg(work)
 
     def reinstall_ruffle(self) -> None:
         def work():

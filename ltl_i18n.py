@@ -178,6 +178,52 @@ DE: dict[str, str] = {
     "PRACTICE – not valid for runs": "PRACTICE – nicht für Runs zugelassen",
     "practice": "Practice",
 
+    # ---- LTU speedrun mod (1.2.0)
+    "BepInEx download does not match the official fingerprint.":
+        "BepInEx-Download stimmt nicht mit dem offiziellen Fingerabdruck überein.",
+    "No speedrun mod is defined in the version list.": "In der Versionsliste ist keine Speedrun-Mod hinterlegt.",
+    "The speedrun mod file is missing from the launcher. Please download the launcher again.":
+        "Die Speedrun-Mod fehlt im Launcher. Bitte den Launcher neu herunterladen.",
+    "The bundled speedrun mod does not match the official fingerprint.":
+        "Die mitgelieferte Speedrun-Mod entspricht nicht dem offiziellen Fingerabdruck.",
+    "Lucky Tower Ultimate was not found in {path}.": "Lucky Tower Ultimate wurde in {path} nicht gefunden.",
+    "This Lucky Tower Ultimate build is not a Unity Mono game – BepInEx 5 cannot be installed. "
+    "Please contact the moderators.":
+        "Diese Lucky-Tower-Ultimate-Version ist kein Unity-Mono-Spiel – BepInEx 5 kann nicht installiert werden. "
+        "Bitte an die Moderatoren wenden.",
+    "Unsupported game architecture ({arch}). Please contact the moderators.":
+        "Nicht unterstützte Spiel-Architektur ({arch}). Bitte an die Moderatoren wenden.",
+    "Installing BepInEx …": "Installiere BepInEx …",
+    "Installing {mod} …": "Installiere {mod} …",
+    "Files in the game folder are in use. Please close Lucky Tower Ultimate and try again.\n\n{e}":
+        "Dateien im Spielordner sind in Benutzung. Bitte Lucky Tower Ultimate schließen und erneut versuchen.\n\n{e}",
+    "Installation could not be verified (state: {state}).": "Installation konnte nicht bestätigt werden (Status: {state}).",
+    "Speedrun mod installed.": "Speedrun-Mod installiert.",
+    "INSTALL SPEEDRUN MOD": "SPEEDRUN-MOD INSTALLIEREN",
+    "REPAIR SPEEDRUN MOD": "SPEEDRUN-MOD REPARIEREN",
+    "Speedrun mod: installed ✓ ({mod} {v}, BepInEx {bv})": "Speedrun-Mod: installiert ✓ ({mod} {v}, BepInEx {bv})",
+    "Speedrun mod: modified or outdated – please repair": "Speedrun-Mod: verändert oder veraltet – bitte reparieren",
+    "Speedrun mod: incomplete – please repair": "Speedrun-Mod: unvollständig – bitte reparieren",
+    "Speedrun mod: not installed (required for top 3 runs)": "Speedrun-Mod: nicht installiert (Pflicht für Top-3-Runs)",
+    "Speedrun mod not available in this launcher version": "Speedrun-Mod in dieser Launcher-Version nicht verfügbar",
+    "Other plugins: {list}": "Weitere Plugins: {list}",
+    "Installs BepInEx {bv} and {mod} {v} into the game folder": "Installiert BepInEx {bv} und {mod} {v} in den Spielordner",
+    "Install speedrun mod": "Speedrun-Mod installieren",
+    "This installs BepInEx {bv} and {mod} {v} into:\n{path}\n\nPlease close Lucky Tower Ultimate first.\nContinue?":
+        "Damit werden BepInEx {bv} und {mod} {v} installiert in:\n{path}\n\nBitte Lucky Tower Ultimate vorher schließen.\nFortfahren?",
+    "{mod} {v} is installed and verified.": "{mod} {v} ist installiert und geprüft.",
+    "SPEEDRUN MOD ✓": "SPEEDRUN-MOD ✓",
+    "STEAM FOLDER": "STEAM-ORDNER",
+    "DATA FOLDER": "DATENORDNER",
+    "Opens the Lucky Tower Ultimate installation folder": "Öffnet den Installationsordner von Lucky Tower Ultimate",
+    "Lucky Tower Ultimate is not installed": "Lucky Tower Ultimate ist nicht installiert",
+    "FULLSCREEN: ON": "VOLLBILD: AN",
+    "FULLSCREEN: OFF": "VOLLBILD: AUS",
+    "Start Lucky Tower 1 & 2 in fullscreen (Ruffle --fullscreen)": "Lucky Tower 1 & 2 im Vollbild starten (Ruffle --fullscreen)",
+    "Fullscreen: on": "Vollbild: an",
+    "Fullscreen: off": "Vollbild: aus",
+    "LANGUAGE: EN": "SPRACHE: DE",
+
     # ---- verification codes (shown in status bar)
     "verified": "verifiziert",
     "same as first download": "wie erster Download",
