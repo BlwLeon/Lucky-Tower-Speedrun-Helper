@@ -179,6 +179,15 @@ DE: dict[str, str] = {
     "practice": "Practice",
 
     # ---- LTU speedrun mod (1.2.0)
+    "{name} download does not match the official fingerprint.":
+        "{name}-Download stimmt nicht mit dem offiziellen Fingerabdruck überein.",
+    "Speedrun mod: {list} missing – please repair": "Speedrun-Mod: {list} fehlt – bitte reparieren",
+    "Installs BepInEx {bv}, {mod} {v} and {extras} into the game folder":
+        "Installiert BepInEx {bv}, {mod} {v} und {extras} in den Spielordner",
+    "This installs BepInEx {bv}, {mod} {v} and {extras} into:\n{path}\n\nPlease close Lucky Tower Ultimate first.\nContinue?":
+        "Damit werden BepInEx {bv}, {mod} {v} und {extras} installiert in:\n{path}\n\nBitte Lucky Tower Ultimate vorher schließen.\nFortfahren?",
+    "In game: F1 = ConfigurationManager (mod settings), F2 = fast restart":
+        "Im Spiel: F1 = ConfigurationManager (Mod-Einstellungen), F2 = Schneller Neustart",
     "BepInEx download does not match the official fingerprint.":
         "BepInEx-Download stimmt nicht mit dem offiziellen Fingerabdruck überein.",
     "No speedrun mod is defined in the version list.": "In der Versionsliste ist keine Speedrun-Mod hinterlegt.",

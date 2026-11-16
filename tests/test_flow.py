@@ -431,4 +431,41 @@ app4.cv.click(app4.button("FULLSCREEN: ON")[0]); assert not app4.settings.fullsc
 core.find_steam_game=lambda appid=core.LTU_STEAM_APPID: None; app4._refresh_page()
 assert not app4.button("STEAM FOLDER")[1][3]
 print("ltu mod / fullscreen ok")
+
+# --- 12. ConfigurationManager als Zusatz-Plugin (1.2.1)
+cz=io.BytesIO()
+with zf.ZipFile(cz,"w") as z:
+    z.writestr("BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll","cm-dll")
+    z.writestr("BepInEx/plugins/ConfigurationManager/ConfigurationManagerAttributes.cs","// attrs")
+(srv/"cm.zip").write_bytes(cz.getvalue())
+cm={"name":"ConfigurationManager","version":"18.4.1","url":base+"/cm.zip","sha256":H(cz.getvalue()),
+    "check":"BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll"}
+spec2=dict(spec, plugins=[cm])
+https_spec=dict(spec, bepinex=dict(spec["bepinex"], url="https://example.org/b.zip"))
+core.validate_ltu_mod(dict(https_spec, plugins=[dict(cm, url="https://example.org/c.zip")]))
+for bad in (dict(cm, sha256=None), dict(cm, url="http://x"), dict(cm, url="https://x/c.zip", check="../evil.dll"), dict(cm, url="https://x/c.zip", check="winhttp.dll")):
+    try: core.validate_ltu_mod(dict(https_spec, plugins=[bad])); raise SystemExit(f"bad plugin accepted {bad}")
+    except ValueError: pass
+gd2=fake_game(pathlib.Path(tmp,"steam2","Lucky Tower Ultimate"))
+m1=core.LtuModManager(root, spec); m1.install(gd2, lambda t,f:None)            # Stand 1.2.0: ohne ConfigManager
+(gd2/"BepInEx"/"plugins"/"ConfigurationManager.dll").write_bytes(b"old-layout")   # alte Kopie direkt in plugins/
+m2=core.LtuModManager(root, spec2)
+st=m2.status(gd2); assert st["state"]=="incomplete" and st["missing_plugins"]==["ConfigurationManager"], st
+st=m2.install(gd2, lambda t,f:None)
+assert st["state"]=="installed" and st["plugins"]=={"ConfigurationManager":"18.4.1"} and st["other_plugins"]==[], st
+assert (gd2/"BepInEx/plugins/ConfigurationManager/ConfigurationManagerAttributes.cs").exists()
+assert (gd2/"BepInEx/plugins/ConfigurationManager.dll.disabled").exists() and not (gd2/"BepInEx/plugins/ConfigurationManager.dll").exists()
+(gd2/"BepInEx/plugins/ConfigurationManager/ConfigurationManager.dll").unlink(); assert m2.status(gd2)["state"]=="incomplete"
+try: core.LtuModManager(pathlib.Path(tmp,"fresh2"), dict(spec2, plugins=[dict(cm, sha256="5"*64)])).install(gd2, lambda t,f:None); raise SystemExit("bad cm zip accepted")
+except core.NotApproved as e: assert "ConfigurationManager" in str(e)
+# UI-Texte
+core.find_steam_game=lambda appid=core.LTU_STEAM_APPID: {"path":str(gd2),"buildid":"1"}
+app4.manifest["ltu_mod"]=spec2; app4.go(app4._ultimate_page)
+tag,e=app4.button("REPAIR SPEEDRUN MOD"); assert "ConfigurationManager missing" in e[2] and "ConfigurationManager 18.4.1" in e[2], e[2]
+messagebox.answer=True; app4.cv.click(tag); pump4(); pump4()
+assert "ConfigurationManager 18.4.1" in messagebox.log[-1][2] and "F1 = ConfigurationManager" in app4.status_text, (messagebox.log[-1], app4.status_text)
+assert m2.status(gd2)["state"]=="installed"
+app4.cv.click(app4.button("PLAY (STEAM)")[0])
+lg=json.loads((root/"launch_log.jsonl").read_text().strip().splitlines()[-1]); assert lg["plugins"]=={"ConfigurationManager":"18.4.1"} and lg["missing_plugins"]==[], lg
+print("configuration manager ok")
 print("ALLE TESTS OK")
