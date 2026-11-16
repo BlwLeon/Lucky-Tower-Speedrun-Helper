@@ -6,6 +6,7 @@ python -m pip install --upgrade pyinstaller || goto :err
 
 set EXTRA=
 if exist swf\*.swf set EXTRA=%EXTRA% --add-data "swf;swf"
+if exist mods\*.dll set EXTRA=%EXTRA% --add-data "mods;mods"
 if exist games.json set EXTRA=%EXTRA% --add-data "games.json;."
 
 python -m PyInstaller --noconfirm --clean --onefile --windowed --name LuckyTowerLauncher %EXTRA% launcher.py || goto :err
